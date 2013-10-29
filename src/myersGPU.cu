@@ -87,7 +87,7 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 	int8_t T_hout[4] = {0, -1, 1, 1};
 */
 	//uint32_t *tmpPv, *tmpMv;
-	uint32_t tmpPv[4], tmpMv[4];
+	uint32_t tmpPv[N_ENTRIES], tmpMv[N_ENTRIES];
 	uint32_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
 	uint32_t candidateX, candidateY, candidateZ;
 	uint32_t initEntry, idEntry, idColumn, indexBase, aline, mask;
@@ -103,8 +103,6 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 		uint32_t minColumn = 0;
 		uint32_t finalMask = ((sizeQueries % SIZE_HW_WORD) == 0) ? HIGH_MASK_32 : 1 << ((sizeQueries % SIZE_HW_WORD) - 1);
 		uint32_t word = 0;
-
-		if(idCandidate == 729) printf("idCandidate: %u, Candidate: %u \n", idCandidate, d_candidates[idCandidate].position);
 
 		if((positionRef < sizeRef) && (sizeRef - positionRef) > sizeCandidate){
 
@@ -166,8 +164,6 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 				
 				score += carry;
 
-			    if(idCandidate == 729) printf("idColumn: %u, Score: %d \n", idColumn, score);
-
 				if(score < minScore){
 					minScore = score;
 					minColumn = idColumn;
@@ -196,7 +192,7 @@ void computeAllQueriesGPU(void *reference, void *queries, void *results)
 	uint32_t blocks = (qry->numCandidates / MAX_THREADS_PER_SM) + ((qry->numCandidates % MAX_THREADS_PER_SM) ? 1 : 0);
 	uint32_t threads = CUDA_NUM_THREADS;
 
-	printf("Bloques: %d - Th_block %d - Th_sm %d\n", blocks, threads, MAX_THREADS_PER_SM);
+	printf("NumEntries: %d -- Bloques: %d - Th_block %d - Th_sm %d\n", N_ENTRIES, blocks, threads, MAX_THREADS_PER_SM);
 
 	myersKernel<<<blocks,threads>>>(qry->d_queries, ref->d_reference, qry->d_candidates, res->d_results, 
 		 			  sizeCandidate, qry->sizeQueries, ref->size, numEntriesPerQuery, qry->numCandidates,
