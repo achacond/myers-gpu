@@ -136,7 +136,7 @@ __global__ void myersKernel(qryEntry_t *d_queries, uint32_t *d_reference, candIn
 							uint32_t numCandidates)
 {
 	__shared__ ///48 = numEntries/candidate ///TODO: Redondear hacia arriba el numWarps
-	uint32_t s_reference[(MAX_THREADS_PER_SM / SIZE_WARP) * 48];
+	uint32_t s_reference[(MAX_THREADS_PER_SM / SIZE_WARP) * 192];
 	uint32_t * s_candidate;
 	
 	uint32_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
@@ -156,13 +156,13 @@ __global__ void myersKernel(qryEntry_t *d_queries, uint32_t *d_reference, candIn
 		int32_t score = sizeQueries, minScore = sizeQueries;
 		uint32_t minColumn = 0;
 		uint32_t mask = ((sizeQueries % SIZE_HW_WORD) == 0) ? HIGH_MASK_32 : 1 << ((sizeQueries % SIZE_HW_WORD) - 1);
-		uint32_t word = 0;
+		uint32_t i, word = 0;
 
 		if((positionRef < sizeRef) && (sizeRef - positionRef) > sizeCandidate){
 
 			//Setting the shared space per warp (candidate)
 			//numEntriesPerCandidate = 48uints = 1400 + 128 = 191Bytes (with 16bytes -- 128bits padding)
-			s_candidate = s_reference + (localWarpIdx * 48);
+			s_candidate = s_reference + (localWarpIdx * 192);
 
 			//Init variables
 			Pv = MAX_VALUE;
@@ -175,8 +175,10 @@ __global__ void myersKernel(qryEntry_t *d_queries, uint32_t *d_reference, candIn
 			Eq3 = d_queries[entry].bitmap[3];
 			Eq4 = d_queries[entry].bitmap[4];
 
-			//Put Candidate in shared memory (12 threads = 191Bytes)
-			if(localThreadIdx < 12) ((uint4 *) s_candidate)[localThreadIdx] = ((uint4 *) d_reference)[entryRef + localThreadIdx]; 
+			//Put Candidate in shared memory (1) 16Bytes accesses => (12 threads = 191Bytes)
+			//Put Candidate in shared memory (2)  4Bytes accesses => (45 threads = 180Bytes)
+			for(i=0; i<192; i+=32)
+				s_candidate[i + localThreadIdx] = d_reference[entryRef + i + localThreadIdx];
 
 			for(idColumn = 0; idColumn < sizeCandidate; idColumn++){
 

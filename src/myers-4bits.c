@@ -114,6 +114,7 @@ typedef struct {
 			}
 
 			indexBase = candidate & 0x07;
+			if(idCandidate == 0) printf("%d ---- indexBase: %d \n", idColumn, indexBase);
 
 			for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
 				Pv = tmpPv[idEntry];
