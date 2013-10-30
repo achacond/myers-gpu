@@ -17,6 +17,7 @@
 # bin/checker 0.2 input/regions-score.1M.prof.1000000.20.100.bin.qry input/regions-score.1M.prof.1000000.20.100.bin.qry.res.cpu
 # bin/swmatrix ANNEALING ANNUAL
 # bin/reference human_g1k_v37.MAY.fasta
+# bin/greference-4bits input/human_g1k_v37.cleaned.fasta
 
 # Shell interpreter #
 #####################
@@ -95,6 +96,9 @@ gcandidates:
 gcandidates-dbg:
 	$(CC) $(GCC_GDB_FLAGS) genCandidates.c -o gcandidates-dbg
 
+greference-4bits:
+	$(CC) $(CFLAGS) genReference-4bits.c -o greference-4bits
+
 ######################
 #  BUILD PARSERS
 ######################
@@ -127,6 +131,9 @@ myersCPU:
 myersCPU-dbg:
 	$(CC) $(GCC_GDB_FLAGS) -o myersCPU-dbg myers.c $(LFLAGS) -lrt -fopenmp
 
+myers4bitsCPU:
+	$(CC) $(CFLAGS) -o myers4bitsCPU myers-4bits.c $(LFLAGS) -lrt -fopenmp
+
 ##################################################
 #  MYERS GPU VERSIONS		 					 # 
 ##################################################
@@ -145,6 +152,11 @@ myersGPU-col:
 	$(NVCC) $(CUDA_OPT_FLAGS) $(NVCFLAGS) -Xptxas -dlcm=$(line) -Xcompiler "-DCUDA $(CUDA_DEVICE) $(CUDA_NUM_THREADS) $(CUDA_NUM_THREADS_PER_SM)" -c myersGPU-col.cu
 	$(CC) $(CUDA_OPT_FLAGS) -msse4.2 -DCUDA $(CUDA_LIBRARY_FLAGS) -o myersGPU-col-$(arch) myers.c myersGPU-col.o -lrt
 	rm myersGPU-col.o
+
+myers4bitsGPU-col:
+	$(NVCC) $(CUDA_OPT_FLAGS) $(NVCFLAGS) -Xptxas -dlcm=$(line) -Xcompiler "-DCUDA $(CUDA_DEVICE) $(CUDA_NUM_THREADS) $(CUDA_NUM_THREADS_PER_SM)" -c myersGPU-4bits-col.cu
+	$(CC) $(CUDA_OPT_FLAGS) -msse4.2 -DCUDA $(CUDA_LIBRARY_FLAGS) -o myers4bitsGPU-col-$(arch) myers-4bits.c myersGPU-4bits-col.o -lrt
+	rm myersGPU-4bits-col.o
 
 ##################################################
 #  MYERS DEBUG GPU VERSIONS						 # 
