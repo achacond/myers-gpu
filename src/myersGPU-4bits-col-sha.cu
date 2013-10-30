@@ -135,6 +135,10 @@ __global__ void myersKernel(qryEntry_t *d_queries, uint32_t *d_reference, candIn
 							uint32_t sizeCandidate, uint32_t sizeQueries, uint32_t sizeRef, uint32_t numEntriesPerQuery,
 							uint32_t numCandidates)
 {
+	__shared__ ///48 = numEntries/candidate ///TODO: Redondear hacia arriba el numWarps
+	uint32_t s_reference[(MAX_THREADS_PER_SM / SIZE_WARP) * 48];
+	uint32_t * s_candidate;
+	
 	uint32_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
 	uint32_t Eq0, Eq1, Eq2, Eq3, Eq4;
 	uint32_t candidate;
@@ -142,6 +146,7 @@ __global__ void myersKernel(qryEntry_t *d_queries, uint32_t *d_reference, candIn
 
 	uint32_t globalThreadIdx = blockIdx.x * MAX_THREADS_PER_SM + threadIdx.x;
 	uint32_t localThreadIdx = threadIdx.x % SIZE_WARP;
+	uint32_t localWarpIdx = threadIdx.x / SIZE_WARP;
 	uint32_t idCandidate = globalThreadIdx / SIZE_WARP;
 
 	if ((threadIdx.x < MAX_THREADS_PER_SM) && (idCandidate < numCandidates)){
@@ -155,22 +160,30 @@ __global__ void myersKernel(qryEntry_t *d_queries, uint32_t *d_reference, candIn
 
 		if((positionRef < sizeRef) && (sizeRef - positionRef) > sizeCandidate){
 
+			//Setting the shared space per warp (candidate)
+			//numEntriesPerCandidate = 48uints = 1400 + 128 = 191Bytes (with 16bytes -- 128bits padding)
+			s_candidate = s_reference + (localWarpIdx * 48);
+
 			//Init variables
 			Pv = MAX_VALUE;
 			Mv = 0;
 			entry = (d_candidates[idCandidate].query * numEntriesPerQuery) + localThreadIdx;
+
 			Eq0 = d_queries[entry].bitmap[0];
 			Eq1 = d_queries[entry].bitmap[1];
 			Eq2 = d_queries[entry].bitmap[2];
 			Eq3 = d_queries[entry].bitmap[3];
 			Eq4 = d_queries[entry].bitmap[4];
 
+			//Put Candidate in shared memory (12 threads = 191Bytes)
+			if(localThreadIdx < 12) ((uint4 *) s_candidate)[localThreadIdx] = ((uint4 *) d_reference)[entryRef + localThreadIdx]; 
+
 			for(idColumn = 0; idColumn < sizeCandidate; idColumn++){
 
 				//Read the next candidate letter (column)
 				aline = (positionRef % BASES_X_ENTRY);
 				if((aline == 0) || (idColumn == 0)) {
-						candidate = d_reference[entryRef + word] >>  (aline * NUM_BITS); 
+						candidate = s_candidate[word] >>  (aline * NUM_BITS); 
 						word++;
 				}
 

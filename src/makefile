@@ -158,6 +158,11 @@ myers4bitsGPU-col:
 	$(CC) $(CUDA_OPT_FLAGS) -msse4.2 -DCUDA $(CUDA_LIBRARY_FLAGS) -o myers4bitsGPU-col-$(arch) myers-4bits.c myersGPU-4bits-col.o -lrt
 	rm myersGPU-4bits-col.o
 
+myers4bitsGPU-col-sha:
+	$(NVCC) $(CUDA_OPT_FLAGS) $(NVCFLAGS) -Xptxas -dlcm=$(line) -Xcompiler "-DCUDA $(CUDA_DEVICE) $(CUDA_NUM_THREADS) $(CUDA_NUM_THREADS_PER_SM)" -c myersGPU-4bits-col-sha.cu
+	$(CC) $(CUDA_OPT_FLAGS) -msse4.2 -DCUDA $(CUDA_LIBRARY_FLAGS) -o myers4bitsGPU-col-sha-$(arch) myers-4bits.c myersGPU-4bits-col-sha.o -lrt
+	rm myersGPU-4bits-col-sha.o
+
 ##################################################
 #  MYERS DEBUG GPU VERSIONS						 # 
 ##################################################
