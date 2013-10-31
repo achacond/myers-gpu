@@ -1,24 +1,10 @@
-# Sequences         #
-#####################
-seq/*
-
-# Binary Files      #
-#####################
-bin/*
-
-# Binary Files      #
-#####################
-input/*
-
 # Experiment Results#
 #####################
 *.log
-results/*.log
+*.txt
 
 # assembler         #
 #####################
-asm/*.cubin
-asm/*.sas 
 *.cubin
 *.sas 
 

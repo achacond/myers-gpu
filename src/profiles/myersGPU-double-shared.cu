@@ -81,13 +81,14 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 							uint32_t sizeCandidate, uint32_t sizeQueries, uint32_t sizeRef, uint32_t numEntriesPerQuery,
 							uint32_t numCandidates, uint32_t concurrentThreads/*, uint32_t *d_Pv, uint32_t *d_Mv*/)
 { 
-/*  
-	uint32_t P_hin[3] = {0, 0, 1};
-	uint32_t N_hin[3] = {1, 0, 0};
-	int8_t T_hout[4] = {0, -1, 1, 1};
-*/
-	//uint32_t *tmpPv, *tmpMv;
-	uint32_t tmpPv[N_ENTRIES], tmpMv[N_ENTRIES];
+
+	__shared__ 
+    uint32_t s_Pv[CUDA_NUM_THREADS * N_ENTRIES], s_Mv[CUDA_NUM_THREADS * N_ENTRIES];
+	__shared__ 
+    qryEntry_t s_Query[CUDA_NUM_THREADS * N_ENTRIES];
+
+	uint32_t *tmpPv, *tmpMv;
+    qryEntry_t *tmpQuery;	
 	uint32_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
 	uint32_t candidateX, candidateY, candidateZ;
 	uint32_t initEntry, idEntry, idColumn, indexBase, aline, mask;
@@ -106,14 +107,20 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 
 		if((positionRef < sizeRef) && (sizeRef - positionRef) > sizeCandidate){
 
-			//tmpPv = d_Pv + ((idCandidate % concurrentThreads) * numEntriesPerQuery);
-			//tmpMv = d_Mv + ((idCandidate % concurrentThreads) * numEntriesPerQuery);
+			tmpPv = s_Pv + (threadIdx.x * numEntriesPerQuery);
+			tmpMv = s_Mv + (threadIdx.x * numEntriesPerQuery);
+			tmpQuery = s_Query + (threadIdx.x * numEntriesPerQuery);
 
 			//Init 
 			initEntry = d_candidates[idCandidate].query * numEntriesPerQuery;
 			for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
 				tmpPv[idEntry] = MAX_VALUE; 
 				tmpMv[idEntry] = 0;
+				tmpQuery[idEntry].bitmap[0] = d_queries[initEntry + idEntry].bitmap[0];
+				tmpQuery[idEntry].bitmap[1] = d_queries[initEntry + idEntry].bitmap[1];
+				tmpQuery[idEntry].bitmap[2] = d_queries[initEntry + idEntry].bitmap[2];
+				tmpQuery[idEntry].bitmap[3] = d_queries[initEntry + idEntry].bitmap[3];
+				tmpQuery[idEntry].bitmap[4] = d_queries[initEntry + idEntry].bitmap[4];
 			}
 
 			for(idColumn = 0; idColumn < sizeCandidate; idColumn++){
@@ -134,7 +141,7 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 					Pv = tmpPv[idEntry];
 					Mv = tmpMv[idEntry];
 					carry++;
-					Eq = d_queries[initEntry + idEntry].bitmap[indexBase];
+					Eq = tmpQuery[idEntry].bitmap[indexBase];
 					mask = (idEntry + 1 == numEntriesPerQuery) ? finalMask : HIGH_MASK_32;
 
 					Xv = Eq | Mv;

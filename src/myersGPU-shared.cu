@@ -73,21 +73,15 @@ static void HandleError( cudaError_t err, const char *file,  int line ) {
    	}
 }
 
-const __constant__	uint32_t P_hin[3] = {0, 0, 1};
-const __constant__	uint32_t N_hin[3] = {1, 0, 0};
-const __constant__	int8_t T_hout[4] = {0, -1, 1, 1};
-
 __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, candInfo_t *d_candidates, resEntry_t *d_results, 
 							uint32_t sizeCandidate, uint32_t sizeQueries, uint32_t sizeRef, uint32_t numEntriesPerQuery,
 							uint32_t numCandidates, uint32_t concurrentThreads/*, uint32_t *d_Pv, uint32_t *d_Mv*/)
 { 
-/*  
-	uint32_t P_hin[3] = {0, 0, 1};
-	uint32_t N_hin[3] = {1, 0, 0};
-	int8_t T_hout[4] = {0, -1, 1, 1};
-*/
-	//uint32_t *tmpPv, *tmpMv;
-	uint32_t tmpPv[N_ENTRIES], tmpMv[N_ENTRIES];
+
+	__shared__ 
+    uint32_t s_Pv[CUDA_NUM_THREADS * N_ENTRIES], s_Mv[CUDA_NUM_THREADS * N_ENTRIES];
+
+	uint32_t *tmpPv, *tmpMv;	
 	uint32_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
 	uint32_t candidateX, candidateY, candidateZ;
 	uint32_t initEntry, idEntry, idColumn, indexBase, aline, mask;
@@ -106,8 +100,8 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 
 		if((positionRef < sizeRef) && (sizeRef - positionRef) > sizeCandidate){
 
-			//tmpPv = d_Pv + ((idCandidate % concurrentThreads) * numEntriesPerQuery);
-			//tmpMv = d_Mv + ((idCandidate % concurrentThreads) * numEntriesPerQuery);
+			tmpPv = s_Pv + (threadIdx.x * numEntriesPerQuery);
+			tmpMv = s_Mv + (threadIdx.x * numEntriesPerQuery);
 
 			//Init 
 			initEntry = d_candidates[idCandidate].query * numEntriesPerQuery;
@@ -133,24 +127,23 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 				for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
 					Pv = tmpPv[idEntry];
 					Mv = tmpMv[idEntry];
-					carry++;
 					Eq = d_queries[initEntry + idEntry].bitmap[indexBase];
 					mask = (idEntry + 1 == numEntriesPerQuery) ? finalMask : HIGH_MASK_32;
 
 					Xv = Eq | Mv;
-					Eq |= N_hin[carry];
+					Eq |= (carry >> 1) & 1;
 					Xh = (((Eq & Pv) + Pv) ^ Pv) | Eq;
 
 					Ph = Mv | ~(Xh | Pv);
 					Mh = Pv & Xh;
 
-					nextCarry = T_hout[(((Ph & mask) != 0) * 2) + ((Mh & mask) != 0)];
+					nextCarry = ((Ph & mask) != 0) - ((Mh & mask) != 0);
 
 					Ph <<= 1;
 					Mh <<= 1;
 
-					Mh |= N_hin[carry];
-					Ph |= P_hin[carry];
+					Mh |= (carry >> 1) & 1;
+					Ph |= (carry + 1) >> 1;
 
 					carry = nextCarry;
 					tmpPv[idEntry] = Mh | ~(Xv | Ph);

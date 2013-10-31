@@ -79,7 +79,8 @@ const __constant__	int8_t T_hout[4] = {0, -1, 1, 1};
 
 __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, candInfo_t *d_candidates, resEntry_t *d_results, 
 							uint32_t sizeCandidate, uint32_t sizeQueries, uint32_t sizeRef, uint32_t numEntriesPerQuery,
-							uint32_t numCandidates, uint32_t concurrentThreads/*, uint32_t *d_Pv, uint32_t *d_Mv*/)
+							uint32_t numCandidates, uint32_t concurrentThreads, /*uint32_t *d_Pv, uint32_t *d_Mv*/
+							int32_t flag)
 { 
 /*  
 	uint32_t P_hin[3] = {0, 0, 1};
@@ -93,7 +94,8 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 	uint32_t initEntry, idEntry, idColumn, indexBase, aline, mask;
 	int8_t carry, nextCarry;
 
-	uint32_t idCandidate = blockIdx.x * MAX_THREADS_PER_SM + threadIdx.x;
+	//uint32_t idCandidate = blockIdx.x * MAX_THREADS_PER_SM + threadIdx.x;
+	uint32_t idCandidate = 0;
 
 	if ((threadIdx.x < MAX_THREADS_PER_SM) && (idCandidate < numCandidates)){
 
@@ -131,8 +133,11 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 				indexBase = ((candidateX >> 31) & 0x1) | ((candidateY >> 30) & 0x2) | ((candidateZ >> 29) & 0x4);
 
 				for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
-					Pv = tmpPv[idEntry];
-					Mv = tmpMv[idEntry];
+	
+					if (1 == flag){
+						Pv = tmpPv[idEntry];
+						Mv = tmpMv[idEntry];
+					}
 					carry++;
 					Eq = d_queries[initEntry + idEntry].bitmap[indexBase];
 					mask = (idEntry + 1 == numEntriesPerQuery) ? finalMask : HIGH_MASK_32;
@@ -153,8 +158,14 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 					Ph |= P_hin[carry];
 
 					carry = nextCarry;
-					tmpPv[idEntry] = Mh | ~(Xv | Ph);
-					tmpMv[idEntry] = Ph & Xv;
+
+					Mh = Mh | ~(Xv | Ph);
+					Ph = Ph & Xv;					
+
+					if (1 == (Mh * Ph * flag)){
+						tmpPv[idEntry] = Mh;
+						tmpMv[idEntry] = Ph;
+					}
 				}
 
 				candidateX <<= 1;
@@ -170,8 +181,11 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 				}		
 			}
 
-	    	d_results[idCandidate].column = minColumn;
-	    	d_results[idCandidate].score = minScore;
+		//MODIFICAR PARA NO ESCRIBIR SALIDA
+			if (1 == flag){
+	    		d_results[idCandidate].column = minColumn;
+	    		d_results[idCandidate].score = minScore;
+			}
 		}
 	}
 }
@@ -196,7 +210,7 @@ void computeAllQueriesGPU(void *reference, void *queries, void *results)
 
 	myersKernel<<<blocks,threads>>>(qry->d_queries, ref->d_reference, qry->d_candidates, res->d_results, 
 		 			  sizeCandidate, qry->sizeQueries, ref->size, numEntriesPerQuery, qry->numCandidates,
-					  concurrentThreads/*, qry->d_Pv, qry->d_Mv*/);
+					  concurrentThreads, 0/*, qry->d_Pv, qry->d_Mv*/);
 
 	cudaThreadSynchronize();
 }
