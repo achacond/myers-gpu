@@ -16,7 +16,8 @@ MODULES=gem_tools \
         gt_attributes gt_dna_string gt_dna_read gt_compact_dna_string \
         gt_template gt_alignment gt_map gt_misms \
         gt_template_utils gt_alignment_utils gt_counters_utils \
-        gt_map_metrics gt_map_align gt_map_score gt_map_utils \
+        gt_map_metrics gt_map_score gt_map_utils \
+        gt_map_align gt_map_align_bpm gt_map_align_bpm_simd \
         gt_sequence_archive gt_segmented_sequence gt_gemIdx_loader \
         gt_input_file gt_buffered_input_file \
         gt_input_parser gt_input_map_parser gt_input_fasta_parser gt_input_generic_parser \

@@ -549,12 +549,11 @@ GT_INLINE gt_status gt_map_realign_weighted_sa(
  * Bit-compressed (Re)alignment
  *   BMP[BitParalellMayers] - Myers' Fast Bit-Vector algorithm (Levenshtein)
  */
-#define GT_BMP_W64_LENGTH 64
-#define GT_BMP_W64_SIZE (GT_BMP_W64_LENGTH/8)
-#define GT_BMP_W64_ONES UINT64_MAX
-#define GT_BMP_W64_MASK 1L<<63
 
-#define GT_BMP_W64_INITIAL_BUFFER_SIZE (16*GT_DNA_RANGE+16*5)
+#define GT_BMP_INITIAL_BUFFER_SIZE ((16*GT_DNA_RANGE+16*5)*64)
+#define GT_BMP_W8_LENGTH 8
+#define GT_BMP_W8_MASK (1<<7)
+#define GT_PEQ_IDX(encoded_character,block_id,num_blocks) (encoded_character*num_blocks+block_id)
 
 GT_INLINE gt_bpm_pattern* gt_map_bpm_pattern_new() {
   gt_bpm_pattern* const bpm_pattern = gt_alloc(gt_bpm_pattern);
@@ -567,244 +566,88 @@ GT_INLINE gt_bpm_pattern* gt_map_bpm_pattern_new() {
   bpm_pattern->score = NULL;
   bpm_pattern->init_score = NULL;
   // Auxiliary buffer // TODO: Replace with slabs
-  bpm_pattern->internal_buffer=gt_vector_new(GT_BMP_W64_INITIAL_BUFFER_SIZE,GT_BMP_W64_SIZE);
+  bpm_pattern->internal_buffer=gt_vector_new(GT_BMP_INITIAL_BUFFER_SIZE,1);
   // Return
   return bpm_pattern;
 }
-#define GT_PEQ_IDX(encoded_character,block_id,num_blocks) (encoded_character*num_blocks+block_id)
-GT_INLINE void gt_map_bpm_pattern_compile(gt_bpm_pattern* const bpm_pattern,char* const pattern,const uint64_t pattern_length) {
+GT_INLINE void gt_map_bpm_pattern_delete(gt_bpm_pattern* const bpm_pattern) {
+  gt_vector_delete(bpm_pattern->internal_buffer);
+  gt_free(bpm_pattern);
+}
+GT_INLINE void gt_map_bpm_pattern_compile(
+    gt_bpm_pattern* const bpm_pattern,const uint64_t word_size,
+    char* const pattern,const uint64_t pattern_length) {
+  GT_NULL_CHECK(bpm_pattern);
+  GT_ZERO_CHECK(word_size);
   GT_NULL_CHECK(pattern);
   GT_ZERO_CHECK(pattern_length);
   // Calculate dimensions
-  const uint64_t pattern_num_words = (pattern_length+(GT_BMP_W64_LENGTH-1))/GT_BMP_W64_LENGTH;
-  const uint64_t pattern_mod = pattern_length%GT_BMP_W64_LENGTH;
-  const uint64_t peq_length = pattern_num_words*GT_BMP_W64_LENGTH;
+  const uint64_t word_length = word_size*GT_BMP_W8_LENGTH;
+  const uint64_t pattern_num_words = (pattern_length+(word_length-1))/word_length;
+  const uint64_t peq_length = pattern_num_words*word_length;
+  const uint64_t pattern_mod = pattern_length%word_length;
   // Init fields
   bpm_pattern->pattern_length = pattern_length;
   bpm_pattern->pattern_num_words = pattern_num_words;
   bpm_pattern->pattern_mod = pattern_mod;
   bpm_pattern->peq_length = peq_length;
   // Allocate memory
-  const uint64_t peq_num_words = GT_DNA_RANGE*pattern_num_words;
-  gt_vector_reserve(bpm_pattern->internal_buffer,peq_num_words+5*pattern_num_words,false);
-  bpm_pattern->peq = gt_vector_get_mem(bpm_pattern->internal_buffer,uint64_t);
-  bpm_pattern->P = bpm_pattern->peq+peq_num_words;
-  bpm_pattern->M = bpm_pattern->P+pattern_num_words;
-  bpm_pattern->level_mask = bpm_pattern->M+pattern_num_words;
-  bpm_pattern->score = (int64_t*) (bpm_pattern->level_mask+pattern_num_words);
-  bpm_pattern->init_score = bpm_pattern->score+pattern_num_words;
+  const uint64_t peq_size = GT_DNA_RANGE*pattern_num_words*word_size;
+  const uint64_t aux_vector_size = pattern_num_words*word_size;
+  const uint64_t score_size = pattern_num_words*8;
+  gt_vector_reserve(bpm_pattern->internal_buffer,peq_size+3*aux_vector_size+2*score_size,false);
+  bpm_pattern->peq = gt_vector_get_mem(bpm_pattern->internal_buffer,void);
+  bpm_pattern->P = bpm_pattern->peq + peq_size;
+  bpm_pattern->M = bpm_pattern->P + aux_vector_size;
+  bpm_pattern->level_mask = bpm_pattern->M + aux_vector_size;
+  bpm_pattern->score = (int64_t*) (bpm_pattern->level_mask + aux_vector_size);
+  bpm_pattern->init_score = bpm_pattern->score + pattern_num_words;
   // Init peq
-  memset(bpm_pattern->peq,0,peq_num_words*GT_BMP_W64_SIZE);
+  memset(bpm_pattern->peq,0,peq_size);
   uint64_t i;
   for (i=0;i<pattern_length;++i) {
     const uint8_t enc_char = gt_cdna_encode(pattern[i]);
-    const uint8_t block = i/GT_BMP_W64_LENGTH;
-    const uint8_t position = i%GT_BMP_W64_LENGTH;
-    const uint64_t mask = 1L<<position;
-    bpm_pattern->peq[GT_PEQ_IDX(enc_char,block,pattern_num_words)] |= mask;
+    const uint64_t block = i/GT_BMP_W8_LENGTH;
+    const uint8_t mask = 1<<(i%GT_BMP_W8_LENGTH);
+    bpm_pattern->peq[GT_PEQ_IDX(enc_char,block,pattern_num_words*word_size)] |= mask;
   }
   for (;i<peq_length;++i) {
-    const uint8_t block = i/GT_BMP_W64_LENGTH;
-    const uint8_t position = i%GT_BMP_W64_LENGTH;
-    const uint64_t mask = 1L<<position;
+    const uint64_t block = i/GT_BMP_W8_LENGTH;
+    const uint8_t mask = 1<<(i%GT_BMP_W8_LENGTH);
     uint64_t j;
     for (j=0;j<GT_DNA_RANGE;++j) {
-      bpm_pattern->peq[GT_PEQ_IDX(j,block,pattern_num_words)] |= mask;
+      bpm_pattern->peq[GT_PEQ_IDX(j,block,pattern_num_words*word_size)] |= mask;
     }
   }
   // Init auxiliary data
-  const uint8_t top = pattern_num_words-1;
+  const uint64_t top = pattern_num_words-1;
+  memset(bpm_pattern->level_mask,0,aux_vector_size);
   for (i=0;i<top;++i) {
-    bpm_pattern->level_mask[i] = GT_BMP_W64_MASK;
-    bpm_pattern->init_score[i] = GT_BMP_W64_LENGTH;
+    bpm_pattern->level_mask[i*word_size+(word_size-1)] = GT_BMP_W8_MASK;
+    bpm_pattern->init_score[i] = word_length;
   }
-  bpm_pattern->level_mask[top] = (pattern_mod>0) ? 1L<<(pattern_mod-1) : GT_BMP_W64_MASK;
-  bpm_pattern->init_score[top] = (pattern_mod>0) ? pattern_mod : GT_BMP_W64_LENGTH;
-}
-GT_INLINE void gt_map_bpm_pattern_delete(gt_bpm_pattern* const bpm_pattern) {
-  gt_vector_delete(bpm_pattern->internal_buffer);
-  gt_free(bpm_pattern);
-}
-GT_INLINE void gt_map_block_bpm_reset_search(
-    uint8_t* const top_level,uint64_t* const P,uint64_t* const M,int64_t* const score,
-    const int64_t* const init_score,const uint64_t max_distance) {
-  // Calculate the top level (maximum bit-word for cut-off purposes)
-  const uint8_t y = (max_distance>0) ? (max_distance+(GT_BMP_W64_LENGTH-1))/GT_BMP_W64_LENGTH : 1;
-  *top_level = y;
-  // Reset score,P,M
-  uint64_t i;
-  P[0]=GT_BMP_W64_ONES;
-  M[0]=0;
-  score[0] = init_score[0];
-  for (i=1;i<y;++i) {
-    P[i]=GT_BMP_W64_ONES;
-    M[i]=0;
-    score[i] = score[i-1] + init_score[i];
-  }
-}
-// Myers algorithm for ASM
-uint64_t P_hin[3] = {0, 0, 1L};
-uint64_t N_hin[3] = {1L, 0, 0};
-int8_t T_hout[2][2] = {{0,-1},{1,1}};
-GT_INLINE int8_t gt_map_block_bpm_advance_block(
-    uint64_t Eq,const uint64_t mask,
-    uint64_t Pv,uint64_t Mv,const int8_t hin,
-    uint64_t* const Pv_out,uint64_t* const Mv_out) {
-  uint64_t Ph, Mh;
-  uint64_t Xv, Xh;
-  int8_t hout=0;
-
-  Xv = Eq | Mv;
-  Eq |= N_hin[hin];
-  Xh = (((Eq & Pv) + Pv) ^ Pv) | Eq;
-
-  Ph = Mv | ~(Xh | Pv);
-  Mh = Pv & Xh;
-
-  hout += T_hout[(Ph & mask)!=0][(Mh & mask)!=0];
-
-  Ph <<= 1;
-  Mh <<= 1;
-
-  Mh |= N_hin[hin];
-  Ph |= P_hin[hin];
-
-  Pv = Mh | ~(Xv | Ph);
-  Mv = Ph & Xv;
-
-  *Pv_out=Pv;
-  *Mv_out=Mv;
-
-  return hout;
-}
-GT_INLINE bool gt_map_block_bpm_get_distance(
-    gt_bpm_pattern* const bpm_pattern,char* const sequence,const uint64_t sequence_length,
-    uint64_t* const position,uint64_t* const distance,const uint64_t max_distance) {
-  // Pattern variables
-  const uint64_t* peq = bpm_pattern->peq;
-  const uint64_t num_words = bpm_pattern->pattern_num_words;
-  uint64_t* const P = bpm_pattern->P;
-  uint64_t* const M = bpm_pattern->M;
-  const uint64_t* const level_mask = bpm_pattern->level_mask;
-  int64_t* const score = bpm_pattern->score;
-  const int64_t* const init_score = bpm_pattern->init_score;
-
-  // Initialize search
-  const uint8_t top = num_words-1;
-  uint8_t top_level;
-  uint64_t min_score = UINT64_MAX, min_score_position = UINT64_MAX;
-  gt_map_block_bpm_reset_search(&top_level,P,M,score,init_score,max_distance);
-
-  // Advance in DP-bit_encoded matrix
-  uint64_t sequence_position;
-  for (sequence_position=0;sequence_position<sequence_length;++sequence_position) {
-    // Fetch next character
-    const uint8_t enc_char = gt_cdna_encode(sequence[sequence_position]);
-
-    // Advance all blocks
-    int8_t carry;
-    uint64_t i;
-    for (i=0,carry=0;i<top_level;++i) {
-      uint64_t* const Py = P+i;
-      uint64_t* const My = M+i;
-      carry = gt_map_block_bpm_advance_block(
-          peq[GT_PEQ_IDX(enc_char,i,num_words)],level_mask[i],*Py,*My,carry+1,Py,My);
-      score[i] += carry;
-    }
-
-    // Cut-off
-    const uint8_t last = top_level-1;
-    if ((score[last]-carry)<=max_distance && last<top &&
-        ( (peq[GT_PEQ_IDX(enc_char,top_level,num_words)] & 1) || (carry<0) )  ) {
-      // Init block V
-      P[top_level]=GT_BMP_W64_ONES;
-      M[top_level]=0;
-
-      uint64_t* const Py = P+top_level;
-      uint64_t* const My = M+top_level;
-      score[top_level] = score[top_level-1] + init_score[top_level] - carry +
-          gt_map_block_bpm_advance_block(peq[GT_PEQ_IDX(enc_char,top_level,num_words)],
-              level_mask[top_level],*Py,*My,carry+1,Py,My);
-      ++top_level;
-    } else {
-      while (score[top_level-1]>max_distance+init_score[top_level-1]) {
-        --top_level;
-      }
-    }
-
-    // Check match
-    if (top_level==num_words && score[top_level-1]<=max_distance) {
-      if (score[top_level-1]<min_score)  {
-        min_score_position = sequence_position;
-        min_score = score[top_level-1];
-      }
-    }
-  }
-  // Return results
-  if (min_score!=UINT64_MAX) {
-    *distance = min_score;
-    *position = min_score_position;
-    return true;
+  if (pattern_mod>0) {
+    const uint64_t mask_shift = pattern_mod-1;
+    const uint64_t block = mask_shift/GT_BMP_W8_LENGTH;
+    const uint8_t mask = 1<<(mask_shift%GT_BMP_W8_LENGTH);
+    bpm_pattern->level_mask[top*word_size+block] = mask;
+    bpm_pattern->init_score[top] = pattern_mod;
   } else {
-    *distance = UINT64_MAX;
-    *position = UINT64_MAX;
-    return false;
+    bpm_pattern->level_mask[top*word_size+(word_size-1)] = GT_BMP_W8_MASK;
+    bpm_pattern->init_score[top] = word_length;
   }
 }
-GT_INLINE gt_status gt_map_block_bpm_realign(
-    gt_map* const map,gt_bpm_pattern* const bpm_pattern,char* const sequence,const uint64_t sequence_length) {
-//  const uint64_t key_mod = key_length%WORD_SIZE_64;
-//  const uint64_t num_words = (key_length+(WORD_SIZE_64-1))/WORD_SIZE_64;
-//  const uint64_t scope = FMI_MATCHES_COMMON_SCOPE;
-//  int64_t* score;
-//  uint64_t* level_mask;
-//  int64_t* init_score;
-//  uint64_t i, j;
-//  uint64_t* vP;
-//  uint64_t* vM;
-//
-//  // Allocate memory
-//  FMI_MATCHES_DP_PREPARE_MEM_M();
-//
-//  // Init DP structures
-//  uint8_t y;
-//  FMI_MATCHES_DP_INIT_M(0);
-//
-//  uint64_t hit_pos, score_match, opt_positions;
-//  bool match_found=false;
-//  int8_t carry;
-//  for (j=0; j<text_length; ++j) {
-//    const uint8_t enc_char = bwt_dna_p_encode[decoded_text[j]];
-//    const uint64_t current_pos = j;
-//    const uint64_t next_pos = j+1;
-//    // Advance blocks and check cut off strategy
-//    FMI_MATCHES_DP_ADVANCE();
-//    FMI_MATCHES_DP_CUT_OFF();
-//    // Check match and its optimization
-//    FMI_MATCHES_CHECK__OPT_MATCH(text_length-1);
-//  }
-//
-//  // Retrieve the alignment
-//  if (match_found) {
-//    // Store the match (and backtrace the mismatches)
-//    FMI_MATCHES_BACKTRACE__STORE_MATCH(0,h+1,h);
-//  }
-  return 0;
-}
-GT_INLINE gt_status gt_map_block_bpm_realign_sa(
-    gt_map* const map,gt_bpm_pattern* const bpm_pattern,
-    gt_sequence_archive* const sequence_archive,const uint64_t extra_length) {
-  GT_NOT_IMPLEMENTED(); // TODO
-  return 0;
-}
-GT_INLINE gt_status gt_map_bpm_realign_sa(
-    gt_map* const map,gt_bpm_pattern* const bpm_pattern,gt_sequence_archive* const sequence_archive) {
-  GT_NOT_IMPLEMENTED(); // TODO
-  return 0;
-}
-GT_INLINE void gt_map_bpm_search_alignment(
-    gt_bpm_pattern* const bpm_pattern,
-    char* const sequence,const uint64_t length,const uint64_t max_levenshtein_distance,
-    gt_vector* const map_vector,const uint64_t max_num_matches) {
-  GT_NOT_IMPLEMENTED(); // TODO
-}
+
+/*
+ * Generic X-vector
+ */
+#define gt_bmp_vector_t uint8_t
+#include "gt_map_align_bpm_generic.c"
+#define gt_bmp_vector_t uint16_t
+#include "gt_map_align_bpm_generic.c"
+#define gt_bmp_vector_t uint32_t
+#include "gt_map_align_bpm_generic.c"
+#define gt_bmp_vector_t uint64_t
+#include "gt_map_align_bpm_generic.c"
+#define gt_bmp_vector_t __int128
+#include "gt_map_align_bpm_generic.c"

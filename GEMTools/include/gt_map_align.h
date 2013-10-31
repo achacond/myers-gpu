@@ -71,15 +71,15 @@ GT_INLINE gt_status gt_map_realign_weighted_sa(
  *   BMP[BitParalellMayers] - Myers' Fast Bit-Vector algorithm (Levenshtein)
  */
 typedef struct {
-  uint64_t *peq; // Pattern equalities (Bit vector for Myers-DP)
+  uint8_t* peq; // Pattern equalities (Bit vector for Myers-DP)
   uint64_t pattern_length;    // Length
   uint64_t pattern_num_words; // ceil(Length / |w|)
   uint64_t pattern_mod;       // Length % |w|
   uint64_t peq_length;        // ceil(Length / |w|) * |w|
   // Auxiliary data
-  uint64_t* P;
-  uint64_t* M;
-  uint64_t* level_mask;
+  uint8_t* P;
+  uint8_t* M;
+  uint8_t* level_mask;
   int64_t* score;
   int64_t* init_score;
   // Auxiliary buffer
@@ -87,22 +87,34 @@ typedef struct {
 } gt_bpm_pattern;
 
 #define GT_BPM_PATTERN_CHECK(bpm_pattern) GT_NULL_CHECK(bpm_pattern->peq)
+#define GT_BPM_PEQ_IDX(encoded_character,block_id,num_blocks) (encoded_character*num_blocks+block_id)
 
 GT_INLINE gt_bpm_pattern* gt_map_bpm_pattern_new();
-GT_INLINE void gt_map_bpm_pattern_compile(gt_bpm_pattern* const bpm_pattern,char* const pattern,const uint64_t pattern_length);
 GT_INLINE void gt_map_bpm_pattern_delete(gt_bpm_pattern* const bpm_pattern);
+GT_INLINE void gt_map_bpm_pattern_compile(
+    gt_bpm_pattern* const bpm_pattern,const uint64_t word_size,
+    char* const pattern,const uint64_t pattern_length);
 
-GT_INLINE bool gt_map_block_bpm_get_distance(
-    gt_bpm_pattern* const bpm_pattern,char* const sequence,const uint64_t sequence_length,
-    uint64_t* const position,uint64_t* const distance,const uint64_t max_levenshtein_distance);
-GT_INLINE gt_status gt_map_block_bpm_realign(
-    gt_map* const map,gt_bpm_pattern* const bpm_pattern,char* const sequence,const uint64_t sequence_length);
-GT_INLINE gt_status gt_map_bpm_realign_sa(
-    gt_map* const map,gt_bpm_pattern* const bpm_pattern,gt_sequence_archive* const sequence_archive);
-GT_INLINE void gt_map_bpm_search_alignment(
-    gt_bpm_pattern* const bpm_pattern,
-    char* const sequence,const uint64_t sequence_length,const uint64_t max_levenshtein_distance,
-    gt_vector* const map_vector,const uint64_t max_num_matches);
+
+/* Base line */
+#include "gt_map_align_bpm.h"
+
+/* Generic X-vector */
+#define gt_bmp_vector_t uint8_t
+#include "gt_map_align_bpm_generic.h"
+#undef gt_bmp_vector_t
+#define gt_bmp_vector_t uint16_t
+#include "gt_map_align_bpm_generic.h"
+#undef gt_bmp_vector_t
+#define gt_bmp_vector_t uint32_t
+#include "gt_map_align_bpm_generic.h"
+#undef gt_bmp_vector_t
+#define gt_bmp_vector_t uint64_t
+#include "gt_map_align_bpm_generic.h"
+#undef gt_bmp_vector_t
+#define gt_bmp_vector_t __int128
+#include "gt_map_align_bpm_generic.h"
+#undef gt_bmp_vector_t
 
 /*
  * Error Messages
