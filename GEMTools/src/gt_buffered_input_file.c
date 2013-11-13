@@ -28,14 +28,17 @@ gt_buffered_input_file* gt_buffered_input_file_new(gt_input_file* const input_fi
   buffered_input_file->attached_buffered_output_file = gt_vector_new(2,sizeof(gt_buffered_output_file*));
   return buffered_input_file;
 }
-GT_INLINE const char** const gt_buffered_input_file_get_text_line(gt_buffered_input_file* const buffered_input_file) {
-  return ((const char** const)(&buffered_input_file->cursor));
-}
 gt_status gt_buffered_input_file_close(gt_buffered_input_file* const buffered_input_file) {
   GT_BUFFERED_INPUT_FILE_CHECK(buffered_input_file);
   gt_vector_delete(buffered_input_file->block_buffer);
   gt_free(buffered_input_file);
   return GT_INPUT_STATUS_OK;
+}
+/*
+ * Accessors
+ */
+GT_INLINE const char** const gt_buffered_input_file_get_text_line(gt_buffered_input_file* const buffered_input_file) {
+  return ((const char** const)(&buffered_input_file->cursor));
 }
 GT_INLINE uint64_t gt_buffered_input_file_get_cursor_pos(gt_buffered_input_file* const buffered_input_file) {
   GT_BUFFERED_INPUT_FILE_CHECK(buffered_input_file);

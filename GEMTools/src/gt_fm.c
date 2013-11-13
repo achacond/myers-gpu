@@ -248,8 +248,8 @@ GT_INLINE bool gt_fm_eof(gt_fm* const fm) {
     case GT_FM_BZIPPED_FILE:
       return fm->eof;
       break;
-    default:
 #endif
+    default:
       GT_INVALID_CASE();
       break;
   }

@@ -64,7 +64,6 @@ const uint64_t gt_mm_mem_alignment_bits_mask[] = { // Check Memory Alignment Bit
  */
 int gt_mm_proc_flags[3] = { PROT_READ, PROT_READ|PROT_WRITE, PROT_READ|PROT_WRITE };
 int gt_mm_mmap_mode[3] = { MAP_PRIVATE, MAP_SHARED, MAP_SHARED };
-
 /*
  * Temporal folder path
  */
@@ -77,13 +76,24 @@ GT_INLINE void gt_mm_set_tmp_folder(char* const tmp_folder_path) {
   GT_NULL_CHECK(tmp_folder_path);
   gt_mm_temp_folder_path = tmp_folder_path;
 }
-
 /*
  * UnitMemory
  *   Allocate relative small chunks of memory relying on the regular memory manager,
  *   usually malloc/calloc using a BuddySystem (Helper functions)
  */
+GT_INLINE void* gt_malloc_nothrow(uint64_t const num_elements,const uint64_t size_element,const bool init_mem,const int init_value) {
+  // Request memory
+  const uint64_t total_memory = num_elements*size_element;
+  void* const allocated_mem = (gt_expect_false(init_mem && init_value==0)) ?
+      calloc(num_elements,size_element) : malloc(total_memory);
+  if (!allocated_mem) return NULL;
+  // Initialize memory
+  if (gt_expect_false(init_mem && init_value!=0)) memset(allocated_mem,init_value,total_memory);
+  //GT_MM_PRINT_MEM_ALIGMENT(allocated_mem); // Debug
+  return allocated_mem;
+}
 GT_INLINE void* gt_malloc_(uint64_t const num_elements,const uint64_t size_element,const bool init_mem,const int init_value) {
+  // Request memory
   const uint64_t total_memory = num_elements*size_element;
   void* allocated_mem;
   if (gt_expect_false(init_mem && init_value==0)) {
@@ -93,15 +103,6 @@ GT_INLINE void* gt_malloc_(uint64_t const num_elements,const uint64_t size_eleme
     allocated_mem = malloc(total_memory);
     gt_cond_fatal_error(!allocated_mem,MEM_ALLOC,total_memory);
   }
-  if (gt_expect_false(init_mem && init_value!=0)) memset(allocated_mem,init_value,total_memory);
-  //GT_MM_PRINT_MEM_ALIGMENT(allocated_mem); // Debug
-  return allocated_mem;
-}
-GT_INLINE void* gt_malloc_nothrow(uint64_t const num_elements,const uint64_t size_element,const bool init_mem,const int init_value) {
-  const uint64_t total_memory = num_elements*size_element;
-  void* const allocated_mem = (gt_expect_false(init_mem && init_value==0)) ?
-      calloc(num_elements,size_element) : malloc(total_memory);
-  if (!allocated_mem) return NULL;
   if (gt_expect_false(init_mem && init_value!=0)) memset(allocated_mem,init_value,total_memory);
   //GT_MM_PRINT_MEM_ALIGMENT(allocated_mem); // Debug
   return allocated_mem;
@@ -170,38 +171,6 @@ GT_INLINE gt_mm* gt_mm_bulk_mmalloc(const uint64_t num_bytes,const bool use_huge
   mm->allocated = num_bytes;
   mm->fd = -1;
   mm->file_name = NULL;
-  // GT_MM_PRINT_MEM_ALIGMENT(mm->memory); // Debug
-  return mm;
-}
-GT_INLINE gt_mm* gt_mm_bulk_mmap_file(char* const file_name,const gt_mm_mode mode,const bool populate_page_tables) {
-  GT_NULL_CHECK(file_name);
-  // Allocate handler
-  gt_mm* const mm = gt_alloc(gt_mm);
-  // Retrieve input file info
-  struct stat stat_info;
-  gt_stat(file_name,&stat_info);
-  // Open file descriptor
-  mm->fd = gt_open_fd(file_name,gt_fm_open_flags[mode],S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
-  /*
-   * Mmap file
-   *   - @mode::
-   *       GT_MM_READ_ONLY => MAP_PRIVATE (no copy-on-write as it's not allowed)
-   *       GT_MM_WRITE_ONLY or GT_MM_READ_WRITE => MAP_SHARED
-   *   - MAP_POPULATE (since Linux 2.5.46)
-   *       Populate (prefault) page tables for a mapping. For a file mapping, this causes
-   *       read-ahead on the file. Later accesses to the mapping will not be blocked by page faults.
-   *       MAP_POPULATE is only supported for private mappings since Linux 2.6.23.
-   */
-  int flags = gt_mm_mmap_mode[mode];
-  if (populate_page_tables) flags |= MAP_POPULATE;
-  mm->memory = mmap(0,stat_info.st_size,gt_mm_proc_flags[mode],flags,mm->fd,0);
-  gt_cond_fatal_error__perror(mm->memory==MAP_FAILED,SYS_MMAP_FILE,file_name);
-  mm->cursor = mm->memory;
-  // Set MM
-  mm->mem_type = GT_MM_MMAPPED;
-  mm->mode = mode;
-  mm->allocated = stat_info.st_size;
-  mm->file_name = gt_strndup(file_name,gt_strlen(file_name));
   // GT_MM_PRINT_MEM_ALIGMENT(mm->memory); // Debug
   return mm;
 }
@@ -276,6 +245,38 @@ GT_INLINE void gt_mm_free(gt_mm* const mm) {
   }
   gt_cfree(mm->file_name);
   gt_free(mm);
+}
+GT_INLINE gt_mm* gt_mm_bulk_mmap_file(char* const file_name,const gt_mm_mode mode,const bool populate_page_tables) {
+  GT_NULL_CHECK(file_name);
+  // Allocate handler
+  gt_mm* const mm = gt_alloc(gt_mm);
+  // Retrieve input file info
+  struct stat stat_info;
+  gt_stat(file_name,&stat_info);
+  // Open file descriptor
+  mm->fd = gt_open_fd(file_name,gt_fm_open_flags[mode],S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+  /*
+   * Mmap file
+   *   - @mode::
+   *       GT_MM_READ_ONLY => MAP_PRIVATE (no copy-on-write as it's not allowed)
+   *       GT_MM_WRITE_ONLY or GT_MM_READ_WRITE => MAP_SHARED
+   *   - MAP_POPULATE (since Linux 2.5.46)
+   *       Populate (prefault) page tables for a mapping. For a file mapping, this causes
+   *       read-ahead on the file. Later accesses to the mapping will not be blocked by page faults.
+   *       MAP_POPULATE is only supported for private mappings since Linux 2.6.23.
+   */
+  int flags = gt_mm_mmap_mode[mode];
+  if (populate_page_tables) flags |= MAP_POPULATE;
+  mm->memory = mmap(0,stat_info.st_size,gt_mm_proc_flags[mode],flags,mm->fd,0);
+  gt_cond_fatal_error__perror(mm->memory==MAP_FAILED,SYS_MMAP_FILE,file_name);
+  mm->cursor = mm->memory;
+  // Set MM
+  mm->mem_type = GT_MM_MMAPPED;
+  mm->mode = mode;
+  mm->allocated = stat_info.st_size;
+  mm->file_name = gt_strndup(file_name,gt_strlen(file_name));
+  // GT_MM_PRINT_MEM_ALIGMENT(mm->memory); // Debug
+  return mm;
 }
 GT_INLINE gt_mm* gt_mm_bulk_load_file(char* const file_name,const uint64_t num_threads) {
   GT_NULL_CHECK(file_name);
@@ -391,9 +392,9 @@ GT_INLINE void gt_mm_skip_align(gt_mm* const mm,const uint64_t num_bytes) {
   GT_ZERO_CHECK(num_bytes);
   if (gt_expect_true(num_bytes > 1)) {
     mm->cursor = mm->cursor+(num_bytes-1);
-    mm->cursor = mm->cursor-(GT_MM_CAST_ADDR(mm->cursor)%(num_bytes-1));
+    mm->cursor = mm->cursor-(GT_MM_CAST_ADDR(mm->cursor)%num_bytes);
     GT_MM_CHECK_SEGMENT(mm);
-    gt_fatal_check(GT_MM_CAST_ADDR(mm->cursor)%(num_bytes-1)!=0,MEM_ALG_FAILED);
+    gt_fatal_check(GT_MM_CAST_ADDR(mm->cursor)%num_bytes!=0,MEM_ALG_FAILED);
   }
 }
 GT_INLINE void gt_mm_skip_align_16(gt_mm* const mm) {

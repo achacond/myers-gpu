@@ -161,7 +161,6 @@ GT_INLINE void gt_output_file_return_buffer(
   }
   GT_END_MUTEX_SECTION(output_file->out_file_mutex);
 }
-
 GT_INLINE gt_output_buffer* gt_output_file_write_buffer(
     gt_output_file* const output_file,gt_output_buffer* const output_buffer) {
   GT_OUTPUT_FILE_CONSISTENCY_CHECK(output_file);
