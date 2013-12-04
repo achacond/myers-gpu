@@ -7,12 +7,12 @@
 
 #define		NUM_BITS		4
 #define		NUM_BASES		5
-#define		SIZE_HW_WORD	32
+#define		SIZE_HW_WORD		32
 #define		MAX_VALUE		0xFFFFFFFF
-#define		HIGH_MASK_32	0x80000000
+#define		HIGH_MASK_32		0x80000000
 #define		LOW_MASK_32		0x00000001
 
-#define 	BASES_PER_ENTRY	8
+#define 	BASES_PER_ENTRY		8
 
 
 
@@ -73,13 +73,15 @@ typedef struct {
 } qry_t;
 
  int computeMyers(qryEntry_t *h_queries, uint32_t *h_reference, candInfo_t *h_candidates, resEntry_t *h_results, 
- 				  uint32_t idCandidate, uint32_t sizeCandidate, uint32_t sizeQueries, uint32_t sizeRef, uint32_t numEntriesPerQuery)
+ 				  uint32_t idCandidate, uint32_t sizeCandidate, uint32_t sizeQueries, uint32_t sizeRef, 
+				  uint32_t numEntriesPerQuery, uint32_t numEntriesPerCandidate)
 {
-  
+
+	uint32_t *localCandidate; 
 	uint32_t tmpPv[numEntriesPerQuery], tmpMv[numEntriesPerQuery];
 	uint32_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
 	uint32_t candidate;
-	uint32_t initEntry, idEntry, idColumn, indexBase, aline, mask;
+	uint32_t initEntry, idCandEntry, idEntry, idColumn = 0, indexBase, intraBase, mask;
 	int8_t carry, nextCarry;
 
 	uint32_t positionRef = h_candidates[idCandidate].position;
@@ -91,62 +93,59 @@ typedef struct {
 
 	if((positionRef < sizeRef) && (sizeRef - positionRef) > sizeCandidate){
 
+		localCandidate = h_reference + entryRef;
 		initEntry = h_candidates[idCandidate].query * numEntriesPerQuery;
 		for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
 			tmpPv[idEntry] = MAX_VALUE;
 			tmpMv[idEntry] = 0;
 		}
 
-		for(idColumn = 0; idColumn < sizeCandidate; idColumn++){
+                for(idCandEntry= 0; idCandEntry < numEntriesPerCandidate; idCandEntry++){
 
-			carry = 0;
-			aline = (positionRef % BASES_PER_ENTRY);
-			if((aline == 0) || (idColumn == 0)) {
-					candidate = h_reference[entryRef + word] >>  (aline * NUM_BITS); 
-					word++;
-			}
+                	candidate = localCandidate[idCandEntry];
+			for(intraBase = 0; intraBase < BASES_PER_ENTRY; intraBase++){
+				carry = 0;
+				indexBase = candidate & 0x07;
 
-			indexBase = candidate & 0x07;
+				for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
+					Pv = tmpPv[idEntry];
+					Mv = tmpMv[idEntry];
+					Eq = h_queries[initEntry + idEntry].bitmap[indexBase];
+					mask = (idEntry + 1 == numEntriesPerQuery) ? finalMask : HIGH_MASK_32;
 
-			for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
-				Pv = tmpPv[idEntry];
-				Mv = tmpMv[idEntry];
-				Eq = h_queries[initEntry + idEntry].bitmap[indexBase];
-				mask = (idEntry + 1 == numEntriesPerQuery) ? finalMask : HIGH_MASK_32;
+					Xv = Eq | Mv;
+					Eq |= (carry >> 1) & 1;
+					Xh = (((Eq & Pv) + Pv) ^ Pv) | Eq;
 
-				Xv = Eq | Mv;
-				Eq |= (carry >> 1) & 1;
-				Xh = (((Eq & Pv) + Pv) ^ Pv) | Eq;
+					Ph = Mv | ~(Xh | Pv);
+					Mh = Pv & Xh;
 
-				Ph = Mv | ~(Xh | Pv);
-				Mh = Pv & Xh;
+					nextCarry = ((Ph & mask) != 0) - ((Mh & mask) != 0);
 
-				nextCarry = ((Ph & mask) != 0) - ((Mh & mask) != 0);
+					Ph <<= 1;
+					Mh <<= 1;
 
-				Ph <<= 1;
-				Mh <<= 1;
+					Mh |= (carry >> 1) & 1;
+					Ph |= (carry + 1) >> 1;
 
-				Mh |= (carry >> 1) & 1;
-				Ph |= (carry + 1) >> 1;
+					carry = nextCarry;
+					tmpPv[idEntry] = Mh | ~(Xv | Ph);
+					tmpMv[idEntry] = Ph & Xv;
+				}
 
-				carry = nextCarry;
-				tmpPv[idEntry] = Mh | ~(Xv | Ph);
-				tmpMv[idEntry] = Ph & Xv;
-			}
+				candidate >>= 4;
+				score += carry;
 
-			candidate >>= 4;
-			positionRef++;
-			
-			score += carry;
-
-			if(score < minScore){
-				minScore = score;
-				minColumn = idColumn;
+				if(score < minScore){
+					minScore = score;
+					minColumn = idColumn;
+				}
+				idColumn++;
 			}
 		
 		}		
-    	h_results[idCandidate].column = minColumn;
-    	h_results[idCandidate].score = minScore;
+    		h_results[idCandidate].column = minColumn;
+    		h_results[idCandidate].score = minScore;
 	}
 
     return(0);
@@ -159,16 +158,21 @@ int computeAllQueriesCPU(void *reference, void *queries, void *results)
 	qry_t *qry = (qry_t *) queries;
 	res_t *res = (res_t *) results;
 
-	uint32_t numEntriesPerQuery = (qry->sizeQueries / SIZE_HW_WORD) + ((qry->sizeQueries % SIZE_HW_WORD) ? 1 : 0);
 	uint32_t sizeCandidate = qry->sizeQueries * (1 + 2 * qry->distance);
+	uint32_t numEntriesPerQuery = (qry->sizeQueries / SIZE_HW_WORD) + ((qry->sizeQueries % SIZE_HW_WORD) ? 1 : 0);
+	uint32_t numEntriesPerCandidate = (sizeCandidate / BASES_PER_ENTRY) + ((sizeCandidate % BASES_PER_ENTRY) ? 2 : 1);
 	uint32_t idCandidate;
+
+	printf("-- Query Size: %d - Entries per Query: %d - CandidateSize: %d - Entries per Candidate: %d\n", 
+		qry->sizeQueries, numEntriesPerQuery, sizeCandidate, numEntriesPerCandidate);
 
 	//CPU program
 	//Parallelize this bucle with openMP
 	#pragma omp for schedule (static)
 	for (idCandidate = 0; idCandidate < qry->numCandidates; idCandidate++){
 		 computeMyers(qry->h_queries, ref->h_reference, qry->h_candidates, res->h_results, 
-		 			  idCandidate, sizeCandidate, qry->sizeQueries, ref->size, numEntriesPerQuery);
+		 			  idCandidate, sizeCandidate, qry->sizeQueries, ref->size, 
+					  numEntriesPerQuery, numEntriesPerCandidate);
 	}
 
 	return(0);
@@ -220,8 +224,8 @@ int loadReference(const char *fn, void **reference)
 	fp = fopen(fn, "rb");
 	if (fp == NULL) return (1);
 
-    fread(&ref->numEntries, sizeof(uint32_t), 1, fp);
-    fread(&ref->size, sizeof(uint32_t), 1, fp);
+  	fread(&ref->numEntries, sizeof(uint32_t), 1, fp);
+   	fread(&ref->size, sizeof(uint32_t), 1, fp);
 
 	ref->h_reference = NULL;
 	ref->d_reference = NULL;
@@ -252,7 +256,7 @@ int initResults(void **results, void *queries)
 	for (idCandidate = 0; idCandidate < res->numResults; idCandidate++)
 	{
 		res->h_results[idCandidate].column = 0;
-    	res->h_results[idCandidate].score = MAX_VALUE;
+    		res->h_results[idCandidate].score = MAX_VALUE;
 	}
 
 	(* results) = res;
@@ -312,7 +316,7 @@ int saveResults(const char *fn, void *results)
 	#ifdef CUDA
 		sprintf(resFileOut, "%s.res-4bits-rev2.gpu", fn);
 	#else
-		sprintf(resFileOut, "%s.res-4bits-rev2.cpu", fn);
+		sprintf(resFileOut, "%s.res-4bits-padding.cpu", fn);
 	#endif
 
 	fp = fopen(resFileOut, "wb");
@@ -362,7 +366,7 @@ int main(int argc, char *argv[])
     double ts,ts1,total;
     uint iter = 1, n;
 
-	error = loadReference(refFile, &reference);
+    error = loadReference(refFile, &reference);
     CATCH_ERROR(error);
 
     error = loadQueries(qryFile, &queries, distance);

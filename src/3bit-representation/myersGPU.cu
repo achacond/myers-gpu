@@ -73,22 +73,12 @@ static void HandleError( cudaError_t err, const char *file,  int line ) {
    	}
 }
 
-const __constant__	uint32_t P_hin[3] = {0, 0, 1};
-const __constant__	uint32_t N_hin[3] = {1, 0, 0};
-const __constant__	int8_t T_hout[4] = {0, -1, 1, 1};
-
 __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, candInfo_t *d_candidates, resEntry_t *d_results, 
 							uint32_t sizeCandidate, uint32_t sizeQueries, uint32_t sizeRef, uint32_t numEntriesPerQuery,
-							uint32_t numCandidates, uint32_t concurrentThreads/*, uint32_t *d_Pv, uint32_t *d_Mv*/)
+							uint32_t numCandidates)
 { 
 
-	__shared__ 
-    uint32_t s_Pv[CUDA_NUM_THREADS * N_ENTRIES], s_Mv[CUDA_NUM_THREADS * N_ENTRIES];
-	__shared__ 
-    qryEntry_t s_Query[CUDA_NUM_THREADS * N_ENTRIES];
-
-	uint32_t *tmpPv, *tmpMv;
-    qryEntry_t *tmpQuery;	
+	uint32_t tmpPv[N_ENTRIES], tmpMv[N_ENTRIES];
 	uint32_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
 	uint32_t candidateX, candidateY, candidateZ;
 	uint32_t initEntry, idEntry, idColumn, indexBase, aline, mask;
@@ -107,20 +97,11 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 
 		if((positionRef < sizeRef) && (sizeRef - positionRef) > sizeCandidate){
 
-			tmpPv = s_Pv + (threadIdx.x * numEntriesPerQuery);
-			tmpMv = s_Mv + (threadIdx.x * numEntriesPerQuery);
-			tmpQuery = s_Query + (threadIdx.x * numEntriesPerQuery);
-
 			//Init 
 			initEntry = d_candidates[idCandidate].query * numEntriesPerQuery;
 			for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
 				tmpPv[idEntry] = MAX_VALUE; 
 				tmpMv[idEntry] = 0;
-				tmpQuery[idEntry].bitmap[0] = d_queries[initEntry + idEntry].bitmap[0];
-				tmpQuery[idEntry].bitmap[1] = d_queries[initEntry + idEntry].bitmap[1];
-				tmpQuery[idEntry].bitmap[2] = d_queries[initEntry + idEntry].bitmap[2];
-				tmpQuery[idEntry].bitmap[3] = d_queries[initEntry + idEntry].bitmap[3];
-				tmpQuery[idEntry].bitmap[4] = d_queries[initEntry + idEntry].bitmap[4];
 			}
 
 			for(idColumn = 0; idColumn < sizeCandidate; idColumn++){
@@ -140,24 +121,23 @@ __global__ void myersKernel(qryEntry_t *d_queries, refEntry_t *d_reference, cand
 				for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
 					Pv = tmpPv[idEntry];
 					Mv = tmpMv[idEntry];
-					carry++;
-					Eq = tmpQuery[idEntry].bitmap[indexBase];
+					Eq = d_queries[initEntry + idEntry].bitmap[indexBase];
 					mask = (idEntry + 1 == numEntriesPerQuery) ? finalMask : HIGH_MASK_32;
 
 					Xv = Eq | Mv;
-					Eq |= N_hin[carry];
+					Eq |= (carry >> 1) & 1;
 					Xh = (((Eq & Pv) + Pv) ^ Pv) | Eq;
 
 					Ph = Mv | ~(Xh | Pv);
 					Mh = Pv & Xh;
 
-					nextCarry = T_hout[(((Ph & mask) != 0) * 2) + ((Mh & mask) != 0)];
+					nextCarry = ((Ph & mask) != 0) - ((Mh & mask) != 0);
 
 					Ph <<= 1;
 					Mh <<= 1;
 
-					Mh |= N_hin[carry];
-					Ph |= P_hin[carry];
+					Mh |= (carry >> 1) & 1;
+					Ph |= (carry + 1) >> 1;
 
 					carry = nextCarry;
 					tmpPv[idEntry] = Mh | ~(Xv | Ph);
@@ -191,7 +171,7 @@ void computeAllQueriesGPU(void *reference, void *queries, void *results)
 	qry_t *qry = (qry_t *) queries;
 	res_t *res = (res_t *) results;
 
-	uint32_t concurrentThreads = 2048 * 8;
+	//uint32_t concurrentThreads = 2048 * 8;
 
 	uint32_t numEntriesPerQuery = (qry->sizeQueries / SIZE_HW_WORD) + ((qry->sizeQueries % SIZE_HW_WORD) ? 1 : 0);
 	uint32_t sizeCandidate = qry->sizeQueries * (1 + 2 * qry->distance);
@@ -202,8 +182,7 @@ void computeAllQueriesGPU(void *reference, void *queries, void *results)
 	printf("NumEntries: %d -- Bloques: %d - Th_block %d - Th_sm %d\n", N_ENTRIES, blocks, threads, MAX_THREADS_PER_SM);
 
 	myersKernel<<<blocks,threads>>>(qry->d_queries, ref->d_reference, qry->d_candidates, res->d_results, 
-		 			  sizeCandidate, qry->sizeQueries, ref->size, numEntriesPerQuery, qry->numCandidates,
-					  concurrentThreads/*, qry->d_Pv, qry->d_Mv*/);
+		 			  sizeCandidate, qry->sizeQueries, ref->size, numEntriesPerQuery, qry->numCandidates);
 
 	cudaThreadSynchronize();
 }
@@ -217,9 +196,9 @@ int transferCPUtoGPU(void *reference, void *queries, void *results)
 
 	//hardcoded: TODO query to GPU
 	//The goal is safe memory to GPU
-	uint32_t concurrentThreads = 2048 * 8;
+	//uint32_t concurrentThreads = 2048 * 8;
  
-	uint32_t numEntriesPerQuery = (qry->sizeQueries / SIZE_HW_WORD) + ((qry->sizeQueries % SIZE_HW_WORD) ? 1 : 0);
+	//uint32_t numEntriesPerQuery = (qry->sizeQueries / SIZE_HW_WORD) + ((qry->sizeQueries % SIZE_HW_WORD) ? 1 : 0);
 
     HANDLE_ERROR(cudaSetDevice(DEVICE));
 
@@ -263,7 +242,6 @@ int transferGPUtoCPU(void *results)
 extern "C" 
 int freeReferenceGPU(void *reference)
 {	
-	//recordar que hemos de liberar el fmi que esta en GPU
 	ref_t *ref = (ref_t *) reference;	
 	
 	if(ref->d_reference != NULL){

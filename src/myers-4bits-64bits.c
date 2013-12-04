@@ -7,10 +7,11 @@
 
 #define		NUM_BITS		4
 #define		NUM_BASES		5
-#define		SIZE_HW_WORD	32
-#define		MAX_VALUE		0xFFFFFFFF
-#define		HIGH_MASK_32	0x80000000
-#define		LOW_MASK_32		0x00000001
+#define		SIZE_HW_WORD	64
+#define		MAX_VALUE_64	0xFFFFFFFFFFFFFFFF
+#define		MAX_VALUE_32	0xFFFFFFFF
+#define		HIGH_MASK_64	0x8000000000000000
+#define		LOW_MASK_64		0x0000000000000001
 
 #define 	BASES_PER_ENTRY	8
 
@@ -19,7 +20,7 @@
 #define CATCH_ERROR(error) {{if (error) { fprintf(stderr, "%s\n", processError(error)); exit(EXIT_FAILURE); }}}
 #ifndef MIN
 	#define MIN(_a, _b) (((_a) < (_b)) ? (_a) : (_b))
-#endif /* MIN */
+#endif
 
 double sampleTime()
 {
@@ -29,8 +30,12 @@ double sampleTime()
 }
 
 typedef struct {
-	uint32_t bitmap[NUM_BASES];
+	uint64_t bitmap[NUM_BASES];
 } qryEntry_t;
+
+typedef struct {
+	uint32_t bitmap[NUM_BASES];
+} qryEntry32_t;
 
 typedef struct {
 	uint32_t column;
@@ -68,38 +73,40 @@ typedef struct {
 	qryEntry_t *d_queries;
 	candInfo_t *h_candidates;
 	candInfo_t *d_candidates;
-	uint32_t *d_Pv;
-	uint32_t *d_Mv;
+	uint64_t *d_Pv;
+	uint64_t *d_Mv;
 } qry_t;
 
  int computeMyers(qryEntry_t *h_queries, uint32_t *h_reference, candInfo_t *h_candidates, resEntry_t *h_results, 
  				  uint32_t idCandidate, uint32_t sizeCandidate, uint32_t sizeQueries, uint32_t sizeRef, uint32_t numEntriesPerQuery)
 {
-  
-	uint32_t tmpPv[numEntriesPerQuery], tmpMv[numEntriesPerQuery];
-	uint32_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
-	uint32_t candidate;
-	uint32_t initEntry, idEntry, idColumn, indexBase, aline, mask;
+  	uint32_t candidate;
+	uint32_t initEntry, idEntry, idColumn, indexBase, aline;
+
 	int8_t carry, nextCarry;
 
 	uint32_t positionRef = h_candidates[idCandidate].position;
 	uint32_t entryRef = positionRef / BASES_PER_ENTRY;
 	int32_t  score = sizeQueries,  minScore = sizeQueries;
 	uint32_t minColumn = 0;
-	uint32_t finalMask = ((sizeQueries % SIZE_HW_WORD) == 0) ? HIGH_MASK_32 : 1 << ((sizeQueries % SIZE_HW_WORD) - 1);
 	uint32_t word = 0;
+
+	uint64_t mask;
+	uint64_t tmpPv[numEntriesPerQuery], tmpMv[numEntriesPerQuery];
+	uint64_t Ph, Mh, Pv, Mv, Xv, Xh, Eq;
+	uint64_t finalMask = ((sizeQueries % SIZE_HW_WORD) == 0) ? HIGH_MASK_64 : 1L << ((sizeQueries % SIZE_HW_WORD) - 1);
 
 	if((positionRef < sizeRef) && (sizeRef - positionRef) > sizeCandidate){
 
 		initEntry = h_candidates[idCandidate].query * numEntriesPerQuery;
 		for(idEntry = 0; idEntry < numEntriesPerQuery; idEntry++){
-			tmpPv[idEntry] = MAX_VALUE;
+			tmpPv[idEntry] = MAX_VALUE_64;
 			tmpMv[idEntry] = 0;
 		}
 
 		for(idColumn = 0; idColumn < sizeCandidate; idColumn++){
 
-			carry = 0;
+			carry = 0L;
 			aline = (positionRef % BASES_PER_ENTRY);
 			if((aline == 0) || (idColumn == 0)) {
 					candidate = h_reference[entryRef + word] >>  (aline * NUM_BITS); 
@@ -112,22 +119,22 @@ typedef struct {
 				Pv = tmpPv[idEntry];
 				Mv = tmpMv[idEntry];
 				Eq = h_queries[initEntry + idEntry].bitmap[indexBase];
-				mask = (idEntry + 1 == numEntriesPerQuery) ? finalMask : HIGH_MASK_32;
+				mask = (idEntry + 1 == numEntriesPerQuery) ? finalMask : HIGH_MASK_64;
 
 				Xv = Eq | Mv;
-				Eq |= (carry >> 1) & 1;
+				Eq |= (carry >> 1L) & 1L;
 				Xh = (((Eq & Pv) + Pv) ^ Pv) | Eq;
 
 				Ph = Mv | ~(Xh | Pv);
 				Mh = Pv & Xh;
 
-				nextCarry = ((Ph & mask) != 0) - ((Mh & mask) != 0);
+				nextCarry = ((Ph & mask) != 0L) - ((Mh & mask) != 0L);
 
-				Ph <<= 1;
-				Mh <<= 1;
+				Ph <<= 1L;
+				Mh <<= 1L;
 
-				Mh |= (carry >> 1) & 1;
-				Ph |= (carry + 1) >> 1;
+				Mh |= (carry >> 1L) & 1L;
+				Ph |= (carry + 1L) >> 1L;
 
 				carry = nextCarry;
 				tmpPv[idEntry] = Mh | ~(Xv | Ph);
@@ -163,7 +170,11 @@ int computeAllQueriesCPU(void *reference, void *queries, void *results)
 	uint32_t sizeCandidate = qry->sizeQueries * (1 + 2 * qry->distance);
 	uint32_t idCandidate;
 
-	//CPU program
+	//qry->numCandidates = 1;
+
+	//Multithreading
+	printf("Thread [%d] -- NumEntriesPerQuery: %d \n", omp_get_thread_num(), numEntriesPerQuery);
+
 	//Parallelize this bucle with openMP
 	#pragma omp for schedule (static)
 	for (idCandidate = 0; idCandidate < qry->numCandidates; idCandidate++){
@@ -174,12 +185,25 @@ int computeAllQueriesCPU(void *reference, void *queries, void *results)
 	return(0);
 }
 
+uint64_t combineTwoValues(uint32_t a, uint32_t b)
+{
+	uint64_t c;
+
+	c = ((uint64_t)a << 32) | b;
+
+	return (c);
+}
+
 int loadQueries(const char *fn, void **queries, float distance)
 {
 	FILE *fp = NULL;
 	qry_t *qry = (qry_t*) malloc(sizeof(qry_t));
 	size_t result;
-	uint32_t idQuery;
+	uint32_t numEntriesPerQuery_32b, numEntriesPerQuery_64b;
+
+	qryEntry32_t * tmp_queries;
+	uint32_t a, b, idBase, idSubQuery, idQuery;
+	uint64_t c;
 
 	fp = fopen(fn, "rb");
 	if (fp == NULL) return (2);
@@ -196,10 +220,44 @@ int loadQueries(const char *fn, void **queries, float distance)
 	qry->h_candidates = NULL;
 	qry->d_candidates = NULL;
 
-	qry->h_queries = (qryEntry_t *) malloc(qry->totalQueriesEntries * sizeof(qryEntry_t));
-		if (qry->h_queries == NULL) return (33);
-	result = fread(qry->h_queries, sizeof(qryEntry_t), qry->totalQueriesEntries, fp);
+	numEntriesPerQuery_64b = (qry->sizeQueries / SIZE_HW_WORD) + ((qry->sizeQueries % SIZE_HW_WORD) ? 1 : 0);
+	numEntriesPerQuery_32b = (qry->sizeQueries / 32) + ((qry->sizeQueries % 32) ? 1 : 0);
+
+	tmp_queries = (qryEntry32_t *) malloc(qry->totalQueriesEntries * sizeof(qryEntry32_t));
+		if (tmp_queries == NULL) return (33);
+	result = fread(tmp_queries, sizeof(qryEntry32_t), qry->totalQueriesEntries, fp);
 		if (result != qry->totalQueriesEntries) return (5);
+
+	qry->h_queries = (qryEntry_t *) malloc(qry->numQueries * numEntriesPerQuery_64b * sizeof(qryEntry_t));
+		if (qry->h_queries == NULL) return (33);
+
+	//Transform the layout of the queries structure 32bits to 64bits
+	for(idQuery = 0; idQuery < qry->numQueries; idQuery++){
+		for(idSubQuery = 0; idSubQuery < numEntriesPerQuery_64b-1; idSubQuery++){
+			for(idBase = 0; idBase < NUM_BASES; idBase++){
+				a = tmp_queries[(idQuery * numEntriesPerQuery_32b) + (2 * idSubQuery)    ].bitmap[idBase];
+				b = tmp_queries[(idQuery * numEntriesPerQuery_32b) + (2 * idSubQuery) + 1].bitmap[idBase];
+				c = ((uint64_t) b << 32) | a;
+				qry->h_queries[(idQuery * numEntriesPerQuery_64b) + idSubQuery].bitmap[idBase] = c;
+			}
+		}
+		//comprobar impares
+		if(32 > (qry->sizeQueries % 64)){
+			for(idBase = 0; idBase < NUM_BASES; idBase++){
+				a = tmp_queries[(idQuery * numEntriesPerQuery_32b) + (2 * idSubQuery)    ].bitmap[idBase];
+				b = 0;
+				c = ((uint64_t) b << 32) | a;
+				qry->h_queries[(idQuery * numEntriesPerQuery_64b) + idSubQuery].bitmap[idBase] = c;
+			}
+		}else{
+			for(idBase = 0; idBase < NUM_BASES; idBase++){
+				a = tmp_queries[(idQuery * numEntriesPerQuery_32b) + (2 * idSubQuery)    ].bitmap[idBase];
+				b = tmp_queries[(idQuery * numEntriesPerQuery_32b) + (2 * idSubQuery) + 1].bitmap[idBase];
+				c = ((uint64_t) b << 32) | a;
+				qry->h_queries[(idQuery * numEntriesPerQuery_64b) + idSubQuery].bitmap[idBase] = c;
+			}		
+		}
+	}
 
 	qry->h_candidates = (candInfo_t *) malloc(qry->numCandidates * sizeof(candInfo_t));
 		if (qry->h_candidates == NULL) return (34);
@@ -207,6 +265,7 @@ int loadQueries(const char *fn, void **queries, float distance)
 		if (result != qry->numCandidates) return (5);
 
 	fclose(fp);
+	free(tmp_queries);
 	(* queries) = qry;
 	return (0);
 }
@@ -252,7 +311,7 @@ int initResults(void **results, void *queries)
 	for (idCandidate = 0; idCandidate < res->numResults; idCandidate++)
 	{
 		res->h_results[idCandidate].column = 0;
-    	res->h_results[idCandidate].score = MAX_VALUE;
+    	res->h_results[idCandidate].score = MAX_VALUE_32;
 	}
 
 	(* results) = res;
@@ -312,7 +371,7 @@ int saveResults(const char *fn, void *results)
 	#ifdef CUDA
 		sprintf(resFileOut, "%s.res-4bits-rev2.gpu", fn);
 	#else
-		sprintf(resFileOut, "%s.res-4bits-rev2.cpu", fn);
+		sprintf(resFileOut, "%s.res-4bits-rev-64b.cpu", fn);
 	#endif
 
 	fp = fopen(resFileOut, "wb");
