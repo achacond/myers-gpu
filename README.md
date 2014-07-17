@@ -1,4 +1,4 @@
-###Threa-cooperative Myers implementation on GPU
+###Thread-cooperative Myers implementation on GPU
 ==================================================
 
 Example of MultiGPU timeline: [link](https://drive.google.com/file/d/0Bw2Nno1-eC2ISlNMSkF2bHI0WGs/edit?usp=sharing)
@@ -22,7 +22,7 @@ Synthetic data (1M queries):
 [400](https://drive.google.com/file/d/0Bw2Nno1-eC2IeEpaQl9XUHF4TlU/edit?usp=sharing) |
 [600](https://drive.google.com/file/d/0Bw2Nno1-eC2IeUtwZnNORGdqVDg/edit?usp=sharing) |
 [800](https://drive.google.com/file/d/0Bw2Nno1-eC2Ib21SVFRVa0FoNVE/edit?usp=sharing) |
-[1000](https://drive.google.com/file/d/0Bw2Nno1-eC2IU29ueWd2emxLdU0/edit?usp=sharing) |
+[1000](https://drive.google.com/file/d/0Bw2Nno1-eC2IU29ueWd2emxLdU0/edit?usp=sharing)
 |
 
 Real data queries:
