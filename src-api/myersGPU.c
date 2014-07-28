@@ -30,8 +30,8 @@ void CudaError( cudaError_t err, const char *file,  int line ) {
 
 char *myersGetErrorString(myersError_t error){
     switch(error) {
-        case E_OPENING_FILE:  		 return "Myers - Error: opening file"; break; 
-        case E_READING_FILE:  		 return "Myers - Error: reading file"; break; 
+        case E_OPENING_FILE:  		 return "Myers - Error: opening file"; break;
+        case E_READING_FILE:  		 return "Myers - Error: reading file"; break;
         case E_INSUFFICIENT_MEM_GPU: return "Myers - Error: there aren't enough GPU memory space"; break;
         case E_ALLOCATE_MEM: 		 return "Myers - Error: allocating data"; break;
         case E_INCOMPATIBLE_GPU:	 return "Myers - Error: incompatible GPU (old CC version)"; break;
@@ -94,12 +94,12 @@ Functions to init all the Myers resources
 ************************************************************/
 
 myersError_t freeReferenceHost(reference_buffer_t *reference)
-{   
+{
     if(reference->h_reference != NULL){
         CUDA_ERROR(cudaFreeHost(reference->h_reference));
         reference->h_reference = NULL;
     }
-	
+
     return(0);
 }
 
@@ -234,11 +234,11 @@ myersError_t initResults(results_buffer_t *results, uint32_t maxReorderBuffer, u
 	return (SUCCESS);
 }
 
-myersError_t initBuffer(buffer_t *buffer, uint32_t idBuffer, uint32_t idDevice, uint32_t numBuffers, 
+myersError_t initBuffer(buffer_t *buffer, uint32_t idBuffer, uint32_t idDevice, uint32_t numBuffers,
 			   uint32_t maxCandidates, uint32_t maxQueries, uint32_t maxPEQEntries,
 			   uint32_t bucketPaddingCandidates, reference_buffer_t *reference)
 {
-    struct cudaDeviceProp deviceProp; 
+    struct cudaDeviceProp deviceProp;
 
 	buffer->queries			=	NULL;
 	buffer->candidates		=	NULL;
@@ -264,7 +264,7 @@ myersError_t initBuffer(buffer_t *buffer, uint32_t idBuffer, uint32_t idDevice, 
 		if (buffer->results == NULL) return (E_ALLOCATE_MEM);
 
 	buffer->idDevice = idDevice;
-    CUDA_ERROR(cudaGetDeviceProperties(&deviceProp, buffer->idDevice)); 
+    CUDA_ERROR(cudaGetDeviceProperties(&deviceProp, buffer->idDevice));
     //printf("\nDevice %d has compute capability %d.%d.\n", DEVICE, deviceProp.major, deviceProp.minor);
     buffer->majorCC = deviceProp.major;
     buffer->minorCC = deviceProp.minor;
@@ -281,7 +281,7 @@ myersError_t initBuffer(buffer_t *buffer, uint32_t idBuffer, uint32_t idDevice, 
 }
 
 
-void initMyers(void ***myersBuffer, uint32_t numBuffers, const char *referenceFileName, 
+void initMyers(void ***myersBuffer, uint32_t numBuffers, const char *referenceFileName,
 			  int32_t averageQuerySize, int32_t candidatesPerQuery)
 {
 	buffer_t **buffer = NULL;
@@ -298,7 +298,7 @@ void initMyers(void ***myersBuffer, uint32_t numBuffers, const char *referenceFi
 
 	//Worst case space
 	if(averageQuerySize <= 0) averageQuerySize = 1024;
-	if(candidatesPerQuery <= 0) candidatesPerQuery = 1; 
+	if(candidatesPerQuery <= 0) candidatesPerQuery = 1;
 
 	CUDA_ERROR(cudaGetDeviceCount(&numDevices));
 	//printf("numDevices: %d\n", numDevices);
@@ -308,11 +308,11 @@ void initMyers(void ***myersBuffer, uint32_t numBuffers, const char *referenceFi
 		//printf("Identidicador de GPU %d \n", idDevice);
 		CUDA_ERROR(cudaSetDevice(idDevice));
 		MYERS_ERROR(initReference(referenceFileName, &reference));
-	
-		uint32_t averageNumPEQEntries = (averageQuerySize / BASES_PER_PEQ_ENTRY) + 
+
+		uint32_t averageNumPEQEntries = (averageQuerySize / BASES_PER_PEQ_ENTRY) +
 										((averageQuerySize % BASES_PER_PEQ_ENTRY) ? 1 : 0);
 
-		float bytesPerQuery = (((averageNumPEQEntries * sizeof(qryEntry_t)) 
+		float bytesPerQuery = (((averageNumPEQEntries * sizeof(qryEntry_t))
 								+ sizeof(qryInfo_t)) / (float) candidatesPerQuery)
 						 		+ sizeof(candInfo_t) + sizeof(resEntry_t) + sizeof(uint32_t);
 
@@ -322,20 +322,20 @@ void initMyers(void ***myersBuffer, uint32_t numBuffers, const char *referenceFi
 
 		CUDA_ERROR(cudaMemGetInfo(&freeMem, &totalMem));
 
-		bytesPerBuffer = (size_t) ((freeMem - (freeMem * 0.05)) / numBuffersPerDevice) 
-									- (bucketPaddingCandidates * sizeof(uint32_t)) 
+		bytesPerBuffer = (size_t) ((freeMem - (freeMem * 0.05)) / numBuffersPerDevice)
+									- (bucketPaddingCandidates * sizeof(uint32_t))
 									- (bucketPaddingCandidates * sizeof(resEntry_t));
 		maxCandidates = (uint32_t) (bytesPerBuffer / bytesPerQuery);
 		maxQueries 	  = maxCandidates / candidatesPerQuery;
 		maxPEQEntries = maxQueries * averageNumPEQEntries;
 
-		if ((maxCandidates < 1) || (maxQueries < 1) || ((bytesPerBuffer * numBuffersPerDevice) > freeMem)) 
+		if ((maxCandidates < 1) || (maxQueries < 1) || ((bytesPerBuffer * numBuffersPerDevice) > freeMem))
 			MYERS_ERROR(E_INSUFFICIENT_MEM_GPU);
 
 		for(idLocalBuffer = 0; idLocalBuffer < numBuffersPerDevice; idLocalBuffer++){
 			idGlobalBuffer = idDevice * numBuffersPerDevice + idLocalBuffer;
 			buffer[idGlobalBuffer] = (buffer_t *) malloc(sizeof(buffer_t));
-			MYERS_ERROR(initBuffer(buffer[idGlobalBuffer], idBuffer, idDevice, numBuffersPerDevice, maxCandidates, 
+			MYERS_ERROR(initBuffer(buffer[idGlobalBuffer], idBuffer, idDevice, numBuffersPerDevice, maxCandidates,
 					   				maxQueries, maxPEQEntries, bucketPaddingCandidates, reference));
 		}
 	}
@@ -376,13 +376,13 @@ myersError_t reorderingBuffer(buffer_t *mBuff)
 		idBucket = (idBucket < (rebuff->numBuckets - 1)) ? idBucket : (rebuff->numBuckets - 1);
 		numCandidatesPerBucket[idBucket]++;
 	}
-	
+
 	//Number of warps per bucket
 	rebuff->candidatesPerBufffer = 0;
 	for(idBucket = 0; idBucket < rebuff->numBuckets - 1; idBucket++){
 		numThreadsPerQuery = idBucket + 1;
 		numQueriesPerWarp = SIZE_WARP / numThreadsPerQuery;
-		numWarpsPerBucket[idBucket] = (numCandidatesPerBucket[idBucket] / numQueriesPerWarp) + 
+		numWarpsPerBucket[idBucket] = (numCandidatesPerBucket[idBucket] / numQueriesPerWarp) +
 											((numCandidatesPerBucket[idBucket] % numQueriesPerWarp) ? 1 : 0);
 		rebuff->h_initPosPerBucket[idBucket] = rebuff->candidatesPerBufffer;
 		rebuff->candidatesPerBufffer += numWarpsPerBucket[idBucket] * numQueriesPerWarp;
@@ -396,7 +396,7 @@ myersError_t reorderingBuffer(buffer_t *mBuff)
 	for(idBuff = 0; idBuff < rebuff->candidatesPerBufffer; idBuff++)
 		rebuff->h_reorderBuffer[idBuff] = MAX_VALUE;
 
-	//Set the number of real results in the reorder buffer 
+	//Set the number of real results in the reorder buffer
 	res->numReorderedResults = rebuff->candidatesPerBufffer;
 
 	//Reorder by size the candidates
@@ -417,7 +417,7 @@ myersError_t reorderingBuffer(buffer_t *mBuff)
 	//Calculate the number of warps necessaries in the GPU
 	for(idBucket = 0; idBucket < (rebuff->numBuckets - 1); idBucket++)
 		rebuff->numWarps += numWarpsPerBucket[idBucket];
-		
+
 	return (SUCCESS);
 }
 
@@ -430,7 +430,7 @@ myersError_t transferCPUtoGPU(buffer_t *mBuff)
 	results_buffer_t  	*res  		= mBuff->results;
 	cudaStream_t 		idStream 	= mBuff->idStream;
 
-	//Select the device of the Multi-GPU platform 
+	//Select the device of the Multi-GPU platform
     CUDA_ERROR(cudaSetDevice(mBuff->idDevice));
 
 	//Transfer Binary Queries to GPU
@@ -456,7 +456,7 @@ myersError_t transferGPUtoCPU(buffer_t *mBuff)
 	cudaStream_t 		idStream 	= mBuff->idStream;
 	results_buffer_t  	*res  		= mBuff->results;
 
-	//Select the device of the Multi-GPU platform 
+	//Select the device of the Multi-GPU platform
     CUDA_ERROR(cudaSetDevice(mBuff->idDevice));
 	CUDA_ERROR(cudaMemcpyAsync(res->h_reorderResults, res->d_reorderResults, res->numReorderedResults * sizeof(resEntry_t), cudaMemcpyDeviceToHost, idStream));
 
@@ -489,7 +489,7 @@ void sendMyersBuffer(void *myersBuffer, float distance, uint32_t numPEQEntries, 
 	if( mBuff->majorCC == 2) MYERS_ERROR(processMyersBufferOnFermi(mBuff));
 	if((mBuff->majorCC == 3) && (mBuff->minorCC == 0)) MYERS_ERROR(processMyersBufferOnKepler1stGen(mBuff));
 	if((mBuff->majorCC >= 3) && (mBuff->minorCC >= 5)) MYERS_ERROR(processMyersBufferOnKepler2ndGen(mBuff));
-
+	if((mBuff->majorCC >= 5) && (mBuff->minorCC >= 0)) MYERS_ERROR(processMyersBufferOnMaxwell1stGen(mBuff));
 	MYERS_ERROR(transferGPUtoCPU(mBuff));
 }
 
@@ -530,7 +530,7 @@ Funtions to free all the Myers resources
 ************************************************************/
 
 myersError_t freeReference(reference_buffer_t *reference)
-{   
+{
     if(reference->d_reference != NULL){
         CUDA_ERROR(cudaFree(reference->d_reference));
         reference->d_reference = NULL;
@@ -548,7 +548,7 @@ myersError_t freeReference(reference_buffer_t *reference)
 }
 
 myersError_t freeQueries(queries_buffer_t *queries)
-{   
+{
     if(queries->h_queries != NULL){
         CUDA_ERROR(cudaFreeHost(queries->h_queries));
         queries->h_queries = NULL;
@@ -650,7 +650,7 @@ myersError_t freeCandidates(candidates_buffer_t *candidates)
 
 void endMyers(void ***myersBuffer)
 {
-	buffer_t **mBuff = (buffer_t **) (* myersBuffer);  
+	buffer_t **mBuff = (buffer_t **) (* myersBuffer);
 	uint32_t numBuffers = mBuff[0]->numBuffers;
 	uint32_t idBuffer;
 
@@ -663,7 +663,7 @@ void endMyers(void ***myersBuffer)
 		MYERS_ERROR(freeCandidates(mBuff[idBuffer]->candidates));
 		MYERS_ERROR(freeReorderBuffer(mBuff[idBuffer]->reorderBuffer));
 		MYERS_ERROR(freeResults(mBuff[idBuffer]->results));
-		
+
 		MYERS_ERROR(cudaStreamDestroy(mBuff[idBuffer]->idStream));
 	}
 

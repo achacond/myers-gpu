@@ -39,7 +39,7 @@ LFLAGS=
 # CUDA flags #
 ##############
 CUDA_OPT_FLAGS=-O3 -m64
-CUDA_LIBRARY_FLAGS=-L/usr/local/cuda/lib64 -I/usr/local/cuda/include -lcuda -lcudart 
+CUDA_LIBRARY_FLAGS=-L/usr/local/cuda/lib64 -I/usr/local/cuda/include -lcuda -lcudart
 
 # DEBUG FLAGS #
 ###############
@@ -93,20 +93,11 @@ endif
 #  BUILD PARSERS
 ######################
 
-gcandidates:
-	$(CC) $(CFLAGS) genCandidates.c -o gcandidates
-
 gcandidates-GEM-1st:
 	$(CC) $(CFLAGS) genCandidate-reorder.c -o gcandidates-GEM-1st
 
-greference-4bits:
-	$(CC) $(CFLAGS) genReference-4bits.c -o greference-4bits
-
-gcandidates-32bits:
-	$(CC) $(CFLAGS) genCandidates-32bits.c -o gcandidates-32bits
-
 ##################################################
-#  MYERS CPU VERSIONS		  					 # 
+#  MYERS CPU VERSIONS		  					 #
 ##################################################
 
 myersCPU-padding-32bits:
@@ -119,24 +110,26 @@ myersCPU-GEM-1st-Padding:
 	$(CC) $(CFLAGS) -o myersCPU-GEM-1st-Padding myers-reorderBuffer-padding.c $(LFLAGS) -lrt -fopenmp
 
 ##################################################
-#  1st STEP INTEGRATION		(reorder buffer)	 # 
+#  1st STEP INTEGRATION		(reorder buffer)	 #
 ##################################################
 
 sample-0:
 	nvcc -O3 -m64 -gencode arch=compute_20,code=sm_20 --ptxas-options=-v -c coreMyersGPU-CC20.cu
 	nvcc -O3 -m64 -gencode arch=compute_30,code=sm_30 --ptxas-options=-v -c coreMyersGPU-CC30.cu
 	nvcc -O3 -m64 -gencode arch=compute_35,code=sm_35 --ptxas-options=-v -c coreMyersGPU-CC35.cu
-	gcc -O3 -m64 $(CUDA_LIBRARY_FLAGS) -c myersGPU.c 
-	gcc -O3 -m64 $(CUDA_LIBRARY_FLAGS) test.c coreMyersGPU-CC20.o coreMyersGPU-CC30.o coreMyersGPU-CC35.o myersGPU.o -o TEST -lrt -fopenmp
-	rm coreMyersGPU-CC20.o coreMyersGPU-CC30.o coreMyersGPU-CC35.o myersGPU.o
+	nvcc -O3 -m64 -gencode arch=compute_50,code=sm_50 --ptxas-options=-v -c coreMyersGPU-CC50.cu
+	gcc -O3 -m64 $(CUDA_LIBRARY_FLAGS) -c myersGPU.c
+	gcc -O3 -m64 $(CUDA_LIBRARY_FLAGS) test.c coreMyersGPU-CC20.o coreMyersGPU-CC30.o coreMyersGPU-CC35.o coreMyersGPU-CC50.o myersGPU.o -o TEST -lrt -fopenmp
+	rm coreMyersGPU-CC20.o coreMyersGPU-CC30.o coreMyersGPU-CC35.o coreMyersGPU-CC50.o myersGPU.o
 
 sample-0-dbg:
 	nvcc -G -O0 -m64 -gencode arch=compute_20,code=sm_20 --ptxas-options=-v -c coreMyersGPU-CC20.cu
 	nvcc -G -O0 -m64 -gencode arch=compute_30,code=sm_30 --ptxas-options=-v -c coreMyersGPU-CC30.cu
 	nvcc -G -O0 -m64 -gencode arch=compute_35,code=sm_35 --ptxas-options=-v -c coreMyersGPU-CC35.cu
-	gcc  -g -O0 -m64 $(CUDA_LIBRARY_FLAGS) -c myersGPU.c 
-	gcc  -g -O0 -m64 $(CUDA_LIBRARY_FLAGS) test.c coreMyersGPU-CC20.o coreMyersGPU-CC30.o coreMyersGPU-CC35.o myersGPU.o -o TEST-dbg -lrt -fopenmp
-	rm coreMyersGPU-CC20.o coreMyersGPU-CC30.o coreMyersGPU-CC35.o myersGPU.o
+	nvcc -G -O0 -m64 -gencode arch=compute_50,code=sm_50 --ptxas-options=-v -c coreMyersGPU-CC50.cu
+	gcc  -g -O0 -m64 $(CUDA_LIBRARY_FLAGS) -c myersGPU.c
+	gcc  -g -O0 -m64 $(CUDA_LIBRARY_FLAGS) test.c coreMyersGPU-CC20.o coreMyersGPU-CC30.o coreMyersGPU-CC35.o coreMyersGPU-CC50.o myersGPU.o -o TEST-dbg -lrt -fopenmp
+	rm coreMyersGPU-CC20.o coreMyersGPU-CC30.o coreMyersGPU-CC35.o coreMyersGPU-CC50.o myersGPU.o
 
 ######################
 #  INSTALL
@@ -144,4 +137,3 @@ sample-0-dbg:
 
 install:
 	find ./ -perm /a+x -type f -exec mv {} ../bin \;
-

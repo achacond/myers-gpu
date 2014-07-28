@@ -136,9 +136,9 @@ int loadTestData(unsigned char *qryFile, test_t *testData)
 	int32_t error;
 
 	error = loadQueries(qryFile, testData);
-		if(error != 0){fprintf(stderr, "Error %d, loading queries \n", error); exit(EXIT_FAILURE);} 
+		if(error != 0){fprintf(stderr, "Error %d, loading queries \n", error); exit(EXIT_FAILURE);}
 	testData->results = (resEntry_t *) malloc(testData->numCandidates * sizeof(resEntry_t));
-		if (testData->queries == NULL){fprintf(stderr, "Error allocating results \n"); exit(EXIT_FAILURE);} 
+		if (testData->queries == NULL){fprintf(stderr, "Error allocating results \n"); exit(EXIT_FAILURE);}
 	return (0);
 }
 
@@ -151,18 +151,24 @@ int freeTestData(test_t *testData)
 	return (0);
 }
 
+/* Execution parameters:
+ * 1)   Distance (overlap): 	0.2
+ * 2)   Reference file path:	~/Myers/data/human_g1k_v37.cleaned.fasta.3101804739.4bits.ref
+ * 3-N) Queries paths: 			 ~/Myers/data/1000.qry
+ */
+
 int main(int argc, char *argv[])
 {
-    void 		 	**buffer;
-	int32_t		    idBuffer, numBuffers = argc - 3, error;
-    float 		    distance = atof(argv[1]);
-    unsigned char 	*refFile  = argv[2];
-    double 		    ts, ts1;
+  void 		 		**buffer;
+	int32_t		   idBuffer, numBuffers = argc - 3, error;
+  float 		    distance = atof(argv[1]);
+  unsigned char *refFile  = argv[2];
+  double 		   ts, ts1;
 
 	test_t			testData[numBuffers];
-    unsigned char 	*qryFile[numBuffers];
+  unsigned char 	*qryFile[numBuffers];
 
-		printf("numBuffers: %d \n", numBuffers);
+	printf("numBuffers: %d \n", numBuffers);
 
 
 	for(idBuffer = 0; idBuffer < numBuffers; idBuffer++){
@@ -185,14 +191,14 @@ int main(int argc, char *argv[])
 		//Get the results from the buffer
 		getFromBuffer(buffer[idBuffer], &testData[idBuffer]);
 	}
-	
+
 	ts1 = sampleTime();
 	endMyers(&buffer);
 
 	printf("TOTAL TIME: \t %f \n", ts1-ts);
 
-    error = saveResults(qryFile[0], &testData[0], numBuffers);
-    	if(error != 0){fprintf(stderr, "Error %d, saving results \n", error); exit(EXIT_FAILURE);} 
+  error = saveResults(qryFile[0], &testData[0], numBuffers);
+		if(error != 0){fprintf(stderr, "Error %d, saving results \n", error); exit(EXIT_FAILURE);}
 
 	for(idBuffer = 0; idBuffer < numBuffers; idBuffer++)
     	freeTestData(&testData[idBuffer]);
